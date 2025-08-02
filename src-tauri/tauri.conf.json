@@ -14,12 +14,20 @@
       {
         "title": "voicetageditor",
         "width": 1280,
-        "height": 720
+        "height": 720,
+        "dragDropEnabled": true 
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": {
+        "img-src": "'self' asset: http://asset.localhost blob: data:"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

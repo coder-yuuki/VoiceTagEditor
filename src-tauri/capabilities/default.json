@@ -9,5 +9,11 @@
     "core:default",
     "opener:default",
     "dialog:default"
-  ]
+  ],
+  "allow": [{ 
+    "path": [
+      "$APPDATA/databases/*",
+      "$HOME/**/*.{png,jpg,jpeg}"
+    ]
+  }]
 }

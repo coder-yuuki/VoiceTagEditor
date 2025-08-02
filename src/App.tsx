@@ -1,5 +1,7 @@
-import { useState } from "preact/hooks";
+import { useState, useEffect } from "preact/hooks";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { listen } from '@tauri-apps/api/event'
+import { convertFileSrc } from '@tauri-apps/api/core';
 import "./App.css";
 
 interface Track {
@@ -48,6 +50,54 @@ function App() {
       currentArtistInput: "",
     },
   ]);
+
+  // Tauriのファイルドロップイベントリスナー
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupListener = async () => {
+      console.log('Setting up file drop listener...');
+      
+      try {
+        unlisten = await listen('tauri://drag-drop', async (event) => {
+          console.log('File drop event received:', event);
+          const { paths } = event.payload as { paths: string[] };
+          console.log('Dropped paths:', paths);
+          console.log('Number of paths dropped:', paths.length);
+          
+          if (paths.length > 0) {
+            const filePath = paths[0];
+            console.log('Processing file path:', filePath);
+          
+            // ファイル拡張子をチェック
+            const supportedExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
+            const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+            
+            if (!supportedExtensions.includes(fileExtension)) {
+              console.error('サポートされていないファイル形式:', fileExtension);
+              return;
+            } else{
+              console.log('Supported file format:', fileExtension);
+            }
+
+            const artworkUrl = convertFileSrc(filePath);
+            handleAlbumFieldChange('albumArtwork', artworkUrl);
+          }
+        });
+      } catch (error) {
+        console.error('Failed to set up file drop listener:', error);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      console.log('Cleaning up file drop listener...');
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   const handleAlbumFieldChange = (field: keyof AlbumData, value: string | boolean | string[]) => {
     setAlbumData({ ...albumData, [field]: value });
@@ -218,11 +268,6 @@ function App() {
     }
   };
 
-  const handleArtworkDrop = (e: DragEvent) => {
-    e.preventDefault();
-    // モックアップなので実際のファイル処理はしない
-    console.log("Artwork dropped");
-  };
 
   return (
     <div class="flex h-screen bg-gray-100">
@@ -230,11 +275,9 @@ function App() {
       <div class="w-80 bg-gray-200 p-3 flex flex-col gap-3 border-r border-gray-300">
         <div 
           class="w-full aspect-square bg-white border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center cursor-pointer hover:border-gray-600 transition-colors"
-          onDrop={handleArtworkDrop}
-          onDragOver={(e) => e.preventDefault()}
         >
           {albumData.albumArtwork ? (
-            <img src={albumData.albumArtwork} alt="Album Artwork" class="w-full h-full object-cover rounded-md" />
+            <img src={albumData.albumArtwork} alt="Album Artwork" class="max-w-full max-h-full object-contain rounded-md" />
           ) : (
             <div class="text-center text-gray-500 text-sm">
               Album Artwork<br />
