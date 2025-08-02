@@ -482,6 +482,45 @@ function App() {
       console.error("Error showing dialog:", error);
     }
   };
+  // 一括削除処理
+  const handleClearAll = async () => {
+    if (tracks.length === 0) {
+      return; // データがない場合は何もしない
+    }
+
+    const confirmMessage = `すべてのデータを削除しますか？
+
+この操作により以下がリセットされます：
+• すべてのトラック
+• アルバム情報
+• アルバムアートワーク
+
+この操作は取り消せません。`;
+
+    try {
+      const userConfirmed = await confirm(confirmMessage, {
+        title: "全データ削除の確認",
+        kind: "warning"
+      });
+
+      if (userConfirmed) {
+        // 全データをリセット
+        setTracks([]);
+        setAlbumData({
+          albumTitle: '',
+          albumArtist: '',
+          releaseDate: '',
+          tags: [],
+          currentTagInput: '',
+          albumArtwork: '',
+          albumArtworkPath: ''
+        });
+        console.log("All data cleared successfully");
+      }
+    } catch (error) {
+      console.error("Error showing clear all dialog:", error);
+    }
+  };
 
 
   return (
@@ -580,7 +619,7 @@ function App() {
 
       {/* メインコンテンツ */}
       <div class="flex-1 flex flex-col bg-white">
-        <div class="px-5 py-4 bg-gray-50 border-b border-gray-300 flex items-center gap-5">
+        <div class="px-5 py-4 bg-gray-50 border-b border-gray-300 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <button 
               onClick={handleSort}
@@ -600,6 +639,15 @@ function App() {
               </div>
             )}
           </div>
+          
+          {/* 一括削除ボタン */}
+          <button 
+            onClick={handleClearAll}
+            disabled={tracks.length === 0}
+            class="px-3 py-1 border border-red-300 rounded bg-red-500 text-white text-xs hover:bg-red-600 hover:border-red-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+          >
+            🗑️ すべて削除
+          </button>
         </div>
 
         <div class="flex-1 overflow-auto">
