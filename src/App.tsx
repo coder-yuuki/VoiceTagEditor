@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
 interface Track {
@@ -68,9 +69,6 @@ function App() {
     const hue = hash % 360;
     const saturation = 65; // 適度な彩度
     const lightness = 85; // 明るい背景色
-    
-    // 文字色は暗めに
-    const textLightness = 25;
     
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   };
@@ -163,6 +161,41 @@ function App() {
     setTracks(tracks.map(track => 
       track.id === trackId ? { ...track, [field]: value } : track
     ));
+  };
+  // トラック削除処理（確認ポップアップ付き）
+  const handleTrackDelete = async (trackId: string) => {
+    console.log("Deleting track:", trackId);
+    console.log("Available tracks:", tracks.map(t => ({id: t.id, title: t.title})));
+    const track = tracks.find(t => t.id === trackId);
+    console.log("Found track:", track);
+    if (!track) {
+      console.log("Track not found!");
+      return;
+    }
+    
+    const confirmMessage = `「${track.title}」を削除しますか？
+この操作は取り消せません。`;
+    console.log("Showing confirm dialog:", confirmMessage);
+    
+    try {
+      const userConfirmed = await confirm(confirmMessage, {
+        title: "トラック削除の確認",
+        kind: "warning"
+      });
+      console.log("User confirmed:", userConfirmed);
+      
+      if (userConfirmed) {
+        console.log("Deleting track from array");
+        const newTracks = tracks.filter(t => t.id !== trackId);
+        console.log("New tracks array:", newTracks);
+        setTracks(newTracks);
+        console.log("Track deleted successfully");
+      } else {
+        console.log("User cancelled deletion");
+      }
+    } catch (error) {
+      console.error("Error showing dialog:", error);
+    }
   };
 
   const handleArtworkDrop = (e: DragEvent) => {
@@ -285,7 +318,7 @@ function App() {
           <table class="w-full">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr>
-                <th class="w-10 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">×</th>
+                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">削除</th>
                 <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Disk</th>
                 <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Track</th>
                 <th class="px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">タイトル</th>
@@ -296,8 +329,11 @@ function App() {
               {tracks.map((track) => (
                 <tr key={track.id} class="hover:bg-gray-50">
                   <td class="px-2 py-2 border-b border-gray-200">
-                    <button class="w-6 h-6 border border-gray-300 rounded bg-white text-gray-500 text-xs hover:bg-red-500 hover:text-white hover:border-red-500 transition-all flex items-center justify-center">
-                      ×
+                    <button 
+                      onClick={() => handleTrackDelete(track.id)}
+                      class="px-2 py-1 border border-red-300 rounded bg-red-50 text-red-600 text-xs hover:bg-red-500 hover:text-white hover:border-red-500 transition-all flex items-center justify-center gap-1 font-medium"
+                    >
+                      🗑️ 削除
                     </button>
                   </td>
                   <td class="px-2 py-2 border-b border-gray-200">
