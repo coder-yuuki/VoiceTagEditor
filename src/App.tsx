@@ -67,24 +67,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
 
-  const [tracks, setTracks] = useState<Track[]>([
-    {
-      id: "1",
-      diskNumber: "01",
-      trackNumber: "01",
-      title: "Sample Track Title 01",
-      artists: ["Sample Artist Name 01", "アーティスト２"],
-      currentArtistInput: "",
-    },
-    {
-      id: "2",
-      diskNumber: "01",
-      trackNumber: "02",
-      title: "Sample Track Title 02",
-      artists: ["Sample Artist Name 01"],
-      currentArtistInput: "",
-    },
-  ]);
+  const [tracks, setTracks] = useState<Track[]>([]);
 
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
@@ -99,6 +82,12 @@ function App() {
     } else {
       return 'unsupported';
     }
+  };
+  // ファイルパスからファイル名（拡張子なし）を取得
+  const getFileNameWithoutExtension = (filePath: string): string => {
+    const fileName = filePath.split('/').pop() || filePath;
+    const lastDotIndex = fileName.lastIndexOf('.');
+    return lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
   };
 
   // 新しいトラックIDを生成
@@ -201,7 +190,7 @@ function App() {
             id: generateTrackId(),
             diskNumber: metadata.disk_number || '01',
             trackNumber: metadata.track_number || '01',
-            title: metadata.title || '未設定',
+            title: metadata.title || getFileNameWithoutExtension(result.file_path),
             artists: metadata.artist ? [metadata.artist] : [],
             currentArtistInput: '',
             filePath: result.file_path
