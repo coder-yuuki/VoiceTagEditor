@@ -61,7 +61,7 @@ function App() {
     albumTitle: "Album Title",
     albumArtist: "Album Artist",
     releaseDate: "2000-01-01",
-    tags: ["戻し", "あまあま"],
+    tags: [],
     currentTagInput: "",
   });
 
