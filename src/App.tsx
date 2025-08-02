@@ -227,7 +227,7 @@ function App() {
   return (
     <div class="flex h-screen bg-gray-100">
       {/* サイドバー */}
-      <div class="w-80 bg-gray-200 p-5 flex flex-col gap-5 border-r border-gray-300">
+      <div class="w-80 bg-gray-200 p-3 flex flex-col gap-3 border-r border-gray-300">
         <div 
           class="w-full aspect-square bg-white border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center cursor-pointer hover:border-gray-600 transition-colors"
           onDrop={handleArtworkDrop}
@@ -243,59 +243,59 @@ function App() {
           )}
         </div>
 
-        <div class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
+        <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-0.5">
             <label class="text-xs text-gray-600 font-medium">アルバム名</label>
             <input
               type="text"
               value={albumData.albumTitle}
               onInput={(e) => handleAlbumFieldChange('albumTitle', e.currentTarget.value)}
               placeholder="Album Title"
-              class="px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-green-500"
+              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
             />
           </div>
 
-          <div class="flex flex-col gap-1">
+          <div class="flex flex-col gap-0.5">
             <label class="text-xs text-gray-600 font-medium">アルバムアーティスト</label>
             <input
               type="text"
               value={albumData.albumArtist}
               onInput={(e) => handleAlbumFieldChange('albumArtist', e.currentTarget.value)}
               placeholder="Album Artist"
-              class="px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-green-500"
+              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
             />
           </div>
 
-          <div class="flex flex-col gap-1">
+          <div class="flex flex-col gap-0.5">
             <label class="text-xs text-gray-600 font-medium">リリース日</label>
             <input
               type="text"
               value={albumData.releaseDate}
               onInput={(e) => handleAlbumFieldChange('releaseDate', e.currentTarget.value)}
               placeholder="2000-01-01"
-              class="px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-green-500"
+              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
             />
           </div>
 
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-600 font-medium">タグ</label>
             <span class="text-xs text-gray-500">カンマで区切り</span>
             
             {/* タグ入力フィールド（チップ内蔵） */}
-            <div class="min-h-[2.5rem] px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
+            <div class="min-h-[2rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
               {/* タグチップ表示 */}
               {albumData.tags.map((tag, index) => {
                 const chipColor = getChipColor(tag);
                 return (
                   <div 
                     key={`${tag}-${index}`}
-                    class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                    class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
                     style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
                   >
                     <span>{tag}</span>
                     <button
                       onClick={() => removeTag(tag)}
-                      class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+                      class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
                     >
                       ×
                     </button>
@@ -309,12 +309,12 @@ function App() {
                 value={albumData.currentTagInput}
                 onInput={(e) => handleTagInput(e.currentTarget.value)}
                 placeholder={albumData.tags.length === 0 ? "タグをカンマで区切って入力" : ""}
-                class="flex-1 min-w-[120px] outline-none bg-transparent text-sm"
+                class="flex-1 min-w-[100px] outline-none bg-transparent text-xs"
               />
             </div>
           </div>
 
-          <button class="px-3 py-2 border border-blue-500 rounded bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors">
+          <button class="px-3 py-1.5 border border-blue-500 rounded bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors">
             DLSiteから取得
           </button>
         </div>
