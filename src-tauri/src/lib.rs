@@ -60,6 +60,66 @@ async fn check_ffmpeg() -> Result<bool, String> {
     Ok(true)
 }
 
+#[tauri::command]
+async fn scan_directory_for_audio_files(directory_path: String) -> Result<Vec<String>, String> {
+    use std::path::Path;
+
+    let path = Path::new(&directory_path);
+    if !path.exists() {
+        return Err("指定されたディレクトリが存在しません".to_string());
+    }
+
+    if !path.is_dir() {
+        return Err("指定されたパスはディレクトリではありません".to_string());
+    }
+
+    let supported_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "opus", "aac", "wma"];
+    let mut audio_files = Vec::new();
+
+    scan_directory_recursive(path, &supported_extensions, &mut audio_files)?;
+
+    // ファイルパスをソート
+    audio_files.sort();
+
+    Ok(audio_files)
+}
+
+fn scan_directory_recursive(
+    dir: &std::path::Path,
+    supported_extensions: &[&str],
+    audio_files: &mut Vec<String>,
+) -> Result<(), String> {
+    use std::fs;
+
+    let entries = fs::read_dir(dir)
+        .map_err(|e| format!("ディレクトリの読み込みに失敗しました: {}", e))?;
+
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| format!("ディレクトリエントリの処理に失敗しました: {}", e))?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            // サブディレクトリを再帰的に処理
+            scan_directory_recursive(&path, supported_extensions, audio_files)?;
+        } else if path.is_file() {
+            // ファイルの拡張子をチェック
+            if let Some(extension) = path.extension() {
+                if let Some(ext_str) = extension.to_str() {
+                    let ext_lower = ext_str.to_lowercase();
+                    if supported_extensions.contains(&ext_lower.as_str()) {
+                        if let Some(path_str) = path.to_str() {
+                            audio_files.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn extract_album_art(file_path: &str) -> Option<String> {
     let output = Command::new("ffmpeg")
         .args([
@@ -321,7 +381,8 @@ pub fn run() {
             greet,
             check_ffmpeg,
             extract_metadata,
-            process_audio_files
+            process_audio_files,
+            scan_directory_for_audio_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

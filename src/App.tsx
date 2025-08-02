@@ -259,22 +259,62 @@ function App() {
           // ファイルタイプで分類
           const imagePaths: string[] = [];
           const audioPaths: string[] = [];
+          const directoryPaths: string[] = [];
           const unsupportedPaths: string[] = [];
 
-          for (const filePath of paths) {
-            const fileType = getFileType(filePath);
+          // パスが拡張子を持つかどうかで判断（拡張子なし=フォルダ）
+          for (const path of paths) {
+            const hasExtension = path.includes('.') && path.lastIndexOf('.') > path.lastIndexOf('/');
+            
+            if (!hasExtension) {
+              // 拡張子がない場合はディレクトリとして扱う
+              console.log(`Found directory: ${path}`);
+              directoryPaths.push(path);
+              continue;
+            }
+
+            // ファイルの場合はタイプで分類
+            const fileType = getFileType(path);
             switch (fileType) {
               case 'image':
-                imagePaths.push(filePath);
+                imagePaths.push(path);
                 break;
               case 'audio':
-                audioPaths.push(filePath);
+                audioPaths.push(path);
                 break;
               default:
-                unsupportedPaths.push(filePath);
+                unsupportedPaths.push(path);
                 break;
             }
           }
+
+          // ディレクトリから音声ファイルを取得
+          let directoryAudioFiles: string[] = [];
+          if (directoryPaths.length > 0) {
+            console.log('Processing directories:', directoryPaths);
+            
+            for (const dirPath of directoryPaths) {
+              try {
+                const files = await invoke<string[]>('scan_directory_for_audio_files', {
+                  directoryPath: dirPath
+                });
+                directoryAudioFiles.push(...files);
+                console.log(`Found ${files.length} audio files in ${dirPath}`);
+              } catch (error) {
+                console.error(`Error scanning directory ${dirPath}:`, error);
+                await confirm(`ディレクトリの処理中にエラーが発生しました:
+${dirPath}
+
+エラー: ${error}`, {
+                  title: 'ディレクトリスキャンエラー',
+                  kind: 'error'
+                });
+              }
+            }
+          }
+
+          // すべての音声ファイルパスを結合
+          const allAudioPaths = [...audioPaths, ...directoryAudioFiles];
 
           // サポートされていないファイルがある場合は警告
           if (unsupportedPaths.length > 0) {
@@ -294,9 +334,23 @@ function App() {
           }
 
           // オーディオファイルの処理
-          if (audioPaths.length > 0) {
-            console.log('Processing audio files:', audioPaths);
-            await processAudioFiles(audioPaths);
+          if (allAudioPaths.length > 0) {
+            console.log('Processing audio files:', allAudioPaths);
+            console.log(`Total audio files found: ${allAudioPaths.length}`);
+            await processAudioFiles(allAudioPaths);
+          }
+
+          // 処理結果を表示
+          if (directoryPaths.length > 0) {
+            const totalFound = directoryAudioFiles.length;
+            if (totalFound > 0) {
+              console.log(`ディレクトリから${totalFound}個の音声ファイルを発見しました`);
+            } else {
+              await confirm('ドロップされたフォルダに音声ファイルが見つかりませんでした。', {
+                title: '音声ファイルなし',
+                kind: 'info'
+              });
+            }
           }
         });
       } catch (error) {
@@ -535,7 +589,7 @@ function App() {
           ) : (
             <div class="text-center text-gray-500 text-sm">
               Album Artwork<br />
-              Drop in this box
+              Drop image file here
             </div>
           )}
         </div>
@@ -651,6 +705,20 @@ function App() {
         </div>
 
         <div class="flex-1 overflow-auto">
+          {tracks.length === 0 && !isProcessing && (
+            <div class="flex items-center justify-center h-64 text-gray-500">
+              <div class="text-center">
+                <div class="text-lg mb-2">🎵</div>
+                <div class="text-sm">
+                  音声ファイルまたはフォルダをここにドロップしてください<br />
+                  <span class="text-xs text-gray-400">
+                    サポートファイル: MP3, M4A, FLAC, OGG, WAV, OPUS, AAC, WMA<br />
+                    フォルダをドロップすると、サブフォルダも含めて音声ファイルを自動検索します
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           <table class="w-full">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr>
