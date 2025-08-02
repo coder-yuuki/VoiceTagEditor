@@ -52,18 +52,49 @@ function App() {
     setAlbumData({ ...albumData, [field]: value });
   };
 
-  // チップの色をランダムに選択
-  const getChipColor = (index: number) => {
-    const colors = [
-      'bg-blue-100 text-blue-800',
-      'bg-green-100 text-green-800', 
-      'bg-yellow-100 text-yellow-800',
-      'bg-red-100 text-red-800',
-      'bg-purple-100 text-purple-800',
-      'bg-pink-100 text-pink-800',
-      'bg-indigo-100 text-indigo-800'
-    ];
-    return colors[index % colors.length];
+  // 文字列をハッシュ化してユニークな色を生成
+  const stringToHash = (str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // 32bit整数に変換
+    }
+    return Math.abs(hash);
+  };
+
+  const hashToColor = (hash: number): string => {
+    // HSLを使って彩度と明度を固定し、色相のみを変化させる
+    const hue = hash % 360;
+    const saturation = 65; // 適度な彩度
+    const lightness = 85; // 明るい背景色
+    
+    // 文字色は暗めに
+    const textLightness = 25;
+    
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  };
+
+  const getTextColor = (backgroundColor: string): string => {
+    // 背景色から色相を抽出して文字色を生成
+    const hueMatch = backgroundColor.match(/hsl\((\d+),/);
+    if (hueMatch) {
+      const hue = parseInt(hueMatch[1]);
+      return `hsl(${hue}, 65%, 25%)`;
+    }
+    return '#1f2937'; // フォールバック
+  };
+
+  // 文字列から一意な色を生成
+  const getChipColor = (text: string) => {
+    const hash = stringToHash(text);
+    const backgroundColor = hashToColor(hash);
+    const textColor = getTextColor(backgroundColor);
+    
+    return {
+      backgroundColor,
+      color: textColor
+    };
   };
 
   // タグ入力処理（カンマ入力時にチップ化）
@@ -200,20 +231,24 @@ function App() {
             {/* タグ入力フィールド（チップ内蔵） */}
             <div class="min-h-[2.5rem] px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
               {/* タグチップ表示 */}
-              {albumData.tags.map((tag, index) => (
-                <div 
-                  key={`${tag}-${index}`}
-                  class={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getChipColor(index)}`}
-                >
-                  <span>{tag}</span>
-                  <button
-                    onClick={() => removeTag(tag)}
-                    class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+              {albumData.tags.map((tag, index) => {
+                const chipColor = getChipColor(tag);
+                return (
+                  <div 
+                    key={`${tag}-${index}`}
+                    class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                    style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <span>{tag}</span>
+                    <button
+                      onClick={() => removeTag(tag)}
+                      class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
               
               {/* 入力フィールド */}
               <input
@@ -294,20 +329,24 @@ function App() {
                       {/* アーティスト入力フィールド（チップ内蔵） */}
                       <div class="flex-1 max-w-xs min-h-[1.75rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
                         {/* アーティストチップ表示 */}
-                        {track.artists.map((artist, index) => (
-                          <div 
-                            key={`${artist}-${index}`}
-                            class={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getChipColor(index)}`}
-                          >
-                            <span>{artist}</span>
-                            <button
-                              onClick={() => removeArtistTag(track.id, artist)}
-                              class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
+                        {track.artists.map((artist, index) => {
+                          const chipColor = getChipColor(artist);
+                          return (
+                            <div 
+                              key={`${artist}-${index}`}
+                              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
                             >
-                              ×
-                            </button>
-                          </div>
-                        ))}
+                              <span>{artist}</span>
+                              <button
+                                onClick={() => removeArtistTag(track.id, artist)}
+                                class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })}
                         
                         {/* 入力フィールド */}
                         <input
