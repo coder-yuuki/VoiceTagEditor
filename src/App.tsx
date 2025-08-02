@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "preact/hooks";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import "./App.css";
@@ -55,6 +56,13 @@ interface AlbumData {
   currentTagInput: string;
 }
 
+interface ExportSettings {
+  outputPath: string;
+  overwriteMode: 'overwrite' | 'rename'; // 上書き or 別名
+  format: 'MP3' | 'M4A' | 'FLAC' | 'OGG' | 'OPUS' | 'AAC';
+  quality: 'highest' | 'high' | 'medium' | 'low';
+}
+
 function App() {
   const [albumData, setAlbumData] = useState<AlbumData>({
     albumArtwork: null,
@@ -69,6 +77,67 @@ function App() {
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
 
   const [tracks, setTracks] = useState<Track[]>([]);
+
+  // 出力設定の状態管理
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportSettings, setExportSettings] = useState<ExportSettings>({
+    outputPath: '',
+    overwriteMode: 'rename',
+    format: 'MP3',
+    quality: 'high'
+  });
+
+  // フォーマットに応じた音質設定のオプションを取得
+  const getQualityOptions = (format: ExportSettings['format']) => {
+    switch (format) {
+      case 'MP3':
+      case 'AAC':
+        return [
+          { value: 'highest', label: '最高 (320kbps)' },
+          { value: 'high', label: '高 (256kbps)' },
+          { value: 'medium', label: '中 (192kbps)' },
+          { value: 'low', label: '低 (128kbps)' }
+        ];
+      case 'M4A':
+        return [
+          { value: 'highest', label: '最高 (256kbps)' },
+          { value: 'high', label: '高 (192kbps)' },
+          { value: 'medium', label: '中 (128kbps)' },
+          { value: 'low', label: '低 (96kbps)' }
+        ];
+      case 'FLAC':
+        return [
+          { value: 'highest', label: '最高 (24bit/96kHz)' },
+          { value: 'high', label: '高 (24bit/48kHz)' },
+          { value: 'medium', label: '中 (16bit/48kHz)' },
+          { value: 'low', label: '低 (16bit/44.1kHz)' }
+        ];
+      case 'OGG':
+      case 'OPUS':
+        return [
+          { value: 'highest', label: '最高 (320kbps)' },
+          { value: 'high', label: '高 (192kbps)' },
+          { value: 'medium', label: '中 (128kbps)' },
+          { value: 'low', label: '低 (96kbps)' }
+        ];
+      default:
+        return [
+          { value: 'highest', label: '最高' },
+          { value: 'high', label: '高' },
+          { value: 'medium', label: '中' },
+          { value: 'low', label: '低' }
+        ];
+    }
+  };
+
+  // フォーマット変更時に音質設定をリセット
+  const handleFormatChange = (newFormat: ExportSettings['format']) => {
+    setExportSettings(prev => ({
+      ...prev,
+      format: newFormat,
+      quality: 'high' // デフォルトに戻す
+    }));
+  };
 
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
@@ -558,31 +627,52 @@ ${dirPath}
       console.error("Error showing dialog:", error);
     }
   };
-  // 出力処理
+  // 出力設定ダイアログを表示
   const handleExport = async () => {
     if (tracks.length === 0) {
       return; // データがない場合は何もしない
     }
+    setShowExportDialog(true);
+  };
 
+  // フォルダ選択処理
+  const handleSelectOutputFolder = async () => {
     try {
-      // タグ情報を使ってファイルを変換・書き出し
-      const exportData = {
-        albumData: {
-          albumTitle: albumData.albumTitle,
-          albumArtist: albumData.albumArtist,
-          releaseDate: albumData.releaseDate,
-          tags: albumData.tags,
-          albumArtworkPath: albumData.albumArtworkPath
-        },
-        tracks: tracks.map(track => ({
-          id: track.id,
-          diskNumber: track.diskNumber,
-          trackNumber: track.trackNumber,
-          title: track.title,
-          artists: track.artists,
-          filePath: track.filePath
-        }))
-      };
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: '出力先フォルダを選択'
+      });
+      
+      if (selected && typeof selected === 'string') {
+        setExportSettings(prev => ({ ...prev, outputPath: selected }));
+      }
+    } catch (error) {
+      console.error('フォルダ選択エラー:', error);
+    }
+  };
+
+  // 実際の出力処理
+  const handleActualExport = async () => {
+    try {
+      // バリデーション
+      if (!exportSettings.outputPath) {
+        await confirm('出力先フォルダを選択してください。', {
+          title: '入力エラー',
+          kind: 'warning'
+        });
+        return;
+      }
+
+      setShowExportDialog(false);
+      
+      // TODO: 実際の出力処理をここに実装
+      console.log('=== 出力設定 ===');
+      console.log(`出力先: ${exportSettings.outputPath}`);
+      console.log(`上書きモード: ${exportSettings.overwriteMode === 'overwrite' ? '上書き' : '別名保存'}`);
+      console.log(`フォーマット: ${exportSettings.format}`);
+      console.log(`音質: ${getQualityOptions(exportSettings.format).find(opt => opt.value === exportSettings.quality)?.label || exportSettings.quality}`);
+      console.log('');
 
       // アルバムアート情報を判定
       const getAlbumArtInfo = () => {
@@ -606,28 +696,53 @@ ${dirPath}
       console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
       console.log('');
       
-      console.log('トラック情報:');
+      console.log('=== トラック変換情報 ===');
       tracks.forEach((track, index) => {
+        // ファイル名に使えない文字をサニタイズ
+        const sanitizeForPath = (str: string) => {
+          return str.replace(/[/\:*?"<>|]/g, '_');
+        };
+        
+        const sanitizedAlbumArtist = sanitizeForPath(albumData.albumArtist);
+        const sanitizedAlbumTitle = sanitizeForPath(albumData.albumTitle);
+        const sanitizedTrackTitle = sanitizeForPath(track.title);
+        
+        const outputFileName = `${track.diskNumber.padStart(2, '0')}-${track.trackNumber.padStart(2, '0')} ${sanitizedTrackTitle}.${exportSettings.format.toLowerCase()}`;
+        const outputDir = `${exportSettings.outputPath}/${sanitizedAlbumArtist}/${sanitizedAlbumTitle}`;
+        const outputFilePath = `${outputDir}/${outputFileName}`;
+        
         console.log(`--- トラック ${index + 1} ---`);
-        console.log(`  ファイルパス: ${track.filePath || 'なし'}`);
-        console.log(`  ディスク番号: ${track.diskNumber}`);
-        console.log(`  トラック番号: ${track.trackNumber}`);
+        console.log(`● 入力ファイル: ${track.filePath || 'なし'}`);
+        console.log(`● 出力ファイル: ${outputFilePath}`);
+        console.log('');
+        
+        console.log('● 変換設定:');
+        console.log(`  フォーマット: ${exportSettings.format}`);
+        console.log(`  音質: ${getQualityOptions(exportSettings.format).find(opt => opt.value === exportSettings.quality)?.label || exportSettings.quality}`);
+        console.log(`  上書きモード: ${exportSettings.overwriteMode === 'overwrite' ? '上書き' : '別名保存'}`);
+        console.log('');
+        
+        console.log('● 埋め込みメタデータ:');
         console.log(`  タイトル: ${track.title}`);
         console.log(`  アーティスト: ${track.artists.join(', ') || 'なし'}`);
         console.log(`  アルバム名: ${albumData.albumTitle}`);
         console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
+        console.log(`  ディスク番号: ${track.diskNumber}`);
+        console.log(`  トラック番号: ${track.trackNumber}`);
         console.log(`  リリース日: ${albumData.releaseDate}`);
-        console.log(`  タグ: ${albumData.tags.join(', ')}`);
+        console.log(`  ジャンル/タグ: ${albumData.tags.join(', ') || 'なし'}`);
         console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
+        console.log('');
+        
+        console.log('● 変換処理:');
+        console.log(`  元ファイル読み込み → メタデータ抽出 → ${exportSettings.format}形式で変換 → メタデータ埋め込み → 出力`);
+        console.log('=====================================');
         console.log('');
       });
       
       console.log('=== 出力処理完了 ===');
       
-      // TODO: Tauriコマンドを呼び出してファイル変換・書き出し処理を実行
-      // await invoke('export_audio_files', { exportData });
-      
-      await confirm('出力処理が完了しました。コンソールでタグ情報を確認してください。', {
+      await confirm('出力処理が完了しました。コンソールで設定と情報を確認してください。', {
         title: '出力完了',
         kind: 'info'
       });
@@ -925,6 +1040,104 @@ ${dirPath}
           </table>
         </div>
       </div>
+
+      {/* 出力設定ダイアログ */}
+      {showExportDialog && (
+        <div class="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
+          <div class="bg-white rounded-lg p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-auto">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">出力設定</h2>
+            
+            {/* 保存先フォルダ */}
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">保存先フォルダ</label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  value={exportSettings.outputPath}
+                  placeholder="フォルダを選択してください"
+                  readonly
+                  class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50 focus:outline-none"
+                />
+                <button
+                  onClick={handleSelectOutputFolder}
+                  class="px-3 py-2 border border-blue-300 rounded bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors whitespace-nowrap"
+                >
+                  📁 選択
+                </button>
+              </div>
+            </div>
+
+            {/* 同名ファイル処理 */}
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">同名ファイルの処理</label>
+              <select
+                value={exportSettings.overwriteMode}
+                onChange={(e) => setExportSettings(prev => ({ 
+                  ...prev, 
+                  overwriteMode: e.currentTarget.value as 'overwrite' | 'rename' 
+                }))}
+                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value="rename">別名で保存</option>
+                <option value="overwrite">上書き保存</option>
+              </select>
+            </div>
+
+            {/* ファイル形式 */}
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">ファイル形式</label>
+              <select
+                value={exportSettings.format}
+                onChange={(e) => handleFormatChange(e.currentTarget.value as ExportSettings['format'])}
+                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value="MP3">MP3</option>
+                <option value="M4A">M4A</option>
+                <option value="FLAC">FLAC</option>
+                <option value="OGG">OGG</option>
+                <option value="OPUS">OPUS</option>
+                <option value="AAC">AAC</option>
+              </select>
+            </div>
+
+            {/* 音質設定 */}
+            <div class="mb-6">
+              <label class="block text-sm font-medium text-gray-700 mb-2">音質設定</label>
+              <select
+                value={exportSettings.quality}
+                onChange={(e) => setExportSettings(prev => ({ 
+                  ...prev, 
+                  quality: e.currentTarget.value as ExportSettings['quality']
+                }))}
+                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+              >
+                {getQualityOptions(exportSettings.format).map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* ボタン */}
+            <div class="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowExportDialog(false)}
+                class="px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleActualExport}
+                disabled={!exportSettings.outputPath}
+                class="px-4 py-2 border border-green-300 rounded bg-green-500 text-white text-sm hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:cursor-not-allowed"
+              >
+                📤 出力実行
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

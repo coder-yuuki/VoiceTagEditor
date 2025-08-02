@@ -413,6 +413,7 @@ async fn save_album_art_to_cache(
     Ok(file_path.to_string_lossy().to_string())
 }
 
+
 fn sanitize_filename(name: &str) -> String {
     // ファイル名に使えない文字を置換
     name.chars()
