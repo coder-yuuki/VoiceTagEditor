@@ -163,6 +163,26 @@ function App() {
     ));
   };
   // トラック削除処理（確認ポップアップ付き）
+  // トラックソート処理（Disk → Track順）
+  const handleSort = () => {
+    const sortedTracks = [...tracks].sort((a, b) => {
+      // 第1ソート: Disk番号
+      const diskA = parseInt(a.diskNumber) || 0;
+      const diskB = parseInt(b.diskNumber) || 0;
+      
+      if (diskA !== diskB) {
+        return diskA - diskB;
+      }
+      
+      // 第2ソート: Track番号
+      const trackA = parseInt(a.trackNumber) || 0;
+      const trackB = parseInt(b.trackNumber) || 0;
+      
+      return trackA - trackB;
+    });
+    
+    setTracks(sortedTracks);
+  };
   const handleTrackDelete = async (trackId: string) => {
     console.log("Deleting track:", trackId);
     console.log("Available tracks:", tracks.map(t => ({id: t.id, title: t.title})));
@@ -304,12 +324,11 @@ function App() {
       <div class="flex-1 flex flex-col bg-white">
         <div class="px-5 py-4 bg-gray-50 border-b border-gray-300 flex items-center gap-5">
           <div class="flex items-center gap-2">
-            <label class="text-sm text-gray-600">ソート</label>
-            <button class="px-3 py-1 border border-gray-300 rounded bg-white text-xs hover:bg-gray-50 transition-colors">
-              Disk
-            </button>
-            <button class="px-3 py-1 border border-gray-300 rounded bg-white text-xs hover:bg-gray-50 transition-colors">
-              Track
+            <button 
+              onClick={handleSort}
+              class="px-3 py-1 border border-gray-300 rounded bg-white text-xs hover:bg-gray-50 transition-colors"
+            >
+              ソート
             </button>
           </div>
         </div>
