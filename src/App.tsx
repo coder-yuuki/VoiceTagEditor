@@ -139,6 +139,31 @@ function App() {
     }));
   };
 
+  // 数字変換関数（"02" → "2", 非数字 → ""）
+  const normalizeNumberString = (value: string): string => {
+    // 数字以外の文字を除去
+    const digitsOnly = value.replace(/[^0-9]/g, '');
+    
+    if (digitsOnly === '') {
+      return '';
+    }
+    
+    // 先頭の0を除去して数字に変換、再度文字列に
+    const numberValue = parseInt(digitsOnly, 10);
+    // NaNチェックと0の場合の処理
+    if (isNaN(numberValue)) {
+      return '';
+    }
+    
+    return numberValue.toString();
+  };
+
+  // 数字のみ入力を受け付ける関数
+  const handleNumberInput = (value: string): string => {
+    // 数字以外の文字を除去
+    return value.replace(/[^0-9]/g, '');
+  };
+
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
@@ -279,8 +304,8 @@ function App() {
           // トラック情報を作成
           const newTrack: Track = {
             id: generateTrackId(),
-            diskNumber: metadata.disk_number || '01',
-            trackNumber: metadata.track_number || '01',
+            diskNumber: normalizeNumberString(metadata.disk_number || '1'),
+            trackNumber: normalizeNumberString(metadata.track_number || '1'),
             title: metadata.title || getFileNameWithoutExtension(result.file_path),
             artists: metadata.artist ? [metadata.artist] : [],
             currentArtistInput: '',
@@ -727,8 +752,8 @@ ${dirPath}
         console.log(`  アーティスト: ${track.artists.join(', ') || 'なし'}`);
         console.log(`  アルバム名: ${albumData.albumTitle}`);
         console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
-        console.log(`  ディスク番号: ${track.diskNumber}`);
-        console.log(`  トラック番号: ${track.trackNumber}`);
+        console.log(`  ディスク番号: ${track.diskNumber.padStart(2, '0')}`);
+        console.log(`  トラック番号: ${track.trackNumber.padStart(2, '0')}`);
         console.log(`  リリース日: ${albumData.releaseDate}`);
         console.log(`  ジャンル/タグ: ${albumData.tags.join(', ') || 'なし'}`);
         console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
@@ -978,7 +1003,11 @@ ${dirPath}
                     <input
                       type="text"
                       value={track.diskNumber}
-                      onInput={(e) => handleTrackChange(track.id, 'diskNumber', e.currentTarget.value)}
+                      onInput={(e) => {
+                        const numericValue = handleNumberInput(e.currentTarget.value);
+                        handleTrackChange(track.id, 'diskNumber', numericValue);
+                      }}
+                      placeholder="1"
                       class="w-12 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
                     />
                   </td>
@@ -986,7 +1015,11 @@ ${dirPath}
                     <input
                       type="text"
                       value={track.trackNumber}
-                      onInput={(e) => handleTrackChange(track.id, 'trackNumber', e.currentTarget.value)}
+                      onInput={(e) => {
+                        const numericValue = handleNumberInput(e.currentTarget.value);
+                        handleTrackChange(track.id, 'trackNumber', numericValue);
+                      }}
+                      placeholder="1"
                       class="w-12 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
                     />
                   </td>
