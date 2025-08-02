@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useCallback } from "preact/hooks";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
@@ -107,9 +107,52 @@ function App() {
   };
 
   // オーディオファイルを処理する関数
-  const processAudioFiles = async (filePaths: string[]) => {
+  const processAudioFiles = useCallback(async (filePaths: string[]) => {
     try {
       setIsProcessing(true);
+      
+      // 最新のトラック状態を取得して重複チェック
+      setTracks(currentTracks => {
+        // 既存のファイルパスをチェックして重複を除外
+        const existingPaths = new Set(currentTracks.map(track => track.filePath).filter(Boolean));
+
+        console.log('既存のファイルパス:', existingPaths);
+        console.log(`既存のトラック: ${currentTracks.map(track => track.title).join(', ')}`);
+        console.log('ドロップされたファイルパス:', filePaths);
+        
+        const newFilePaths = filePaths.filter(path => !existingPaths.has(path));
+        
+        console.log('重複除外後のファイルパス:', newFilePaths);
+        
+        if (newFilePaths.length === 0) {
+          console.log('すべてのファイルは既に読み込み済みです');
+          confirm('選択されたファイルはすべて既に読み込み済みです。', {
+            title: '重複ファイル',
+            kind: 'info'
+          });
+          setIsProcessing(false);
+          return currentTracks; // 状態変更なし
+        }
+        
+        if (newFilePaths.length < filePaths.length) {
+          const skippedCount = filePaths.length - newFilePaths.length;
+          console.log(`${skippedCount}個のファイルは既に読み込み済みのためスキップします`);
+        }
+
+        // 非同期処理を開始（状態は後で更新）
+        processNewFiles(newFilePaths);
+        
+        return currentTracks; // 現時点では状態変更なし
+      });
+    } catch (error) {
+      console.error('オーディオファイルの処理エラー:', error);
+      setIsProcessing(false);
+    }
+  }, []);
+
+  // 実際のファイル処理を行う関数
+  const processNewFiles = async (newFilePaths: string[]) => {
+    try {
       
       // FFmpegのチェック
       const ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
@@ -121,9 +164,9 @@ function App() {
         return;
       }
 
-      // オーディオファイルを処理
+      // 重複していないオーディオファイルのみを処理
       const results = await invoke<AudioFileResult[]>('process_audio_files', {
-        filePaths: filePaths
+        filePaths: newFilePaths
       });
 
       // 結果を処理してトラックリストに追加
