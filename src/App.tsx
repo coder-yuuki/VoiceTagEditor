@@ -11,10 +11,12 @@ interface Track {
   title: string;
   artists: string[];
   currentArtistInput: string;
+  filePath?: string; // ファイルパスを追加
 }
 
 interface AlbumData {
   albumArtwork: string | null;
+  albumArtworkPath?: string; // アルバムアートのファイルパスを追加
   albumTitle: string;
   albumArtist: string;
   releaseDate: string;
@@ -81,7 +83,11 @@ function App() {
             }
 
             const artworkUrl = convertFileSrc(filePath);
-            handleAlbumFieldChange('albumArtwork', artworkUrl);
+            setAlbumData(prev => ({
+              ...prev,
+              albumArtwork: artworkUrl,
+              albumArtworkPath: filePath // ファイルパスも保存
+            }));
           }
         });
       } catch (error) {
