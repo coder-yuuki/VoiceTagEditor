@@ -39,6 +39,64 @@ pub struct ProgressEvent {
     pub status: String, // "processing" | "completed" | "error"
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertRequest {
+    pub tracks: Vec<ConvertTrack>,
+    pub album_data: ConvertAlbumData,
+    pub output_settings: ConvertOutputSettings,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertTrack {
+    pub source_path: String,
+    pub disk_number: String,
+    pub track_number: String,
+    pub title: String,
+    pub artists: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertAlbumData {
+    pub album_title: String,
+    pub album_artist: String,
+    pub release_date: String,
+    pub tags: Vec<String>,
+    pub album_artwork_path: Option<String>,
+    pub album_artwork_cache_path: Option<String>,
+    pub album_artwork: Option<String>, // base64
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertOutputSettings {
+    pub output_path: String,
+    pub format: String, // "MP3", "M4A", "FLAC", etc.
+    pub quality: String,
+    pub overwrite_mode: String, // "overwrite" | "rename"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertProgress {
+    pub current: usize,
+    pub total: usize,
+    pub current_file: String,
+    pub status: String, // "processing" | "completed" | "error"
+    pub progress_percent: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertResult {
+    pub success: bool,
+    pub converted_files: Vec<String>,
+    pub failed_files: Vec<ConvertError>,
+    pub total_processed: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConvertError {
+    pub source_path: String,
+    pub error_message: String,
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -426,6 +484,272 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+async fn convert_single_file(
+    app_handle: &AppHandle,
+    track: &ConvertTrack,
+    album_data: &ConvertAlbumData,
+    output_settings: &ConvertOutputSettings,
+    current: usize,
+    total: usize,
+) -> Result<String, String> {
+    let source_path = &track.source_path;
+    
+    // 出力ファイル名を生成
+    // AACの場合はm4a拡張子を使用
+    let file_extension = if output_settings.format == "AAC" {
+        "m4a"
+    } else {
+        &output_settings.format.to_lowercase()
+    };
+    
+    let output_filename = format!(
+        "{:02}-{:02} {}.{}",
+        track.track_number.parse::<u32>().unwrap_or(1),
+        track.disk_number.parse::<u32>().unwrap_or(1),
+        sanitize_filename(&track.title),
+        file_extension
+    );
+    
+    let mut output_path = Path::new(&output_settings.output_path).join(&output_filename);
+    
+    // 同名ファイルの処理
+    if output_path.exists() && output_settings.overwrite_mode == "rename" {
+        let mut counter = 1;
+        let stem = output_path.file_stem().unwrap().to_string_lossy().into_owned();
+        let extension = output_path.extension().unwrap().to_string_lossy().into_owned();
+        
+        loop {
+            let new_filename = format!("{}_{}.{}", stem, counter, extension);
+            output_path = Path::new(&output_settings.output_path).join(&new_filename);
+            if !output_path.exists() {
+                break;
+            }
+            counter += 1;
+        }
+    }
+    
+    // 進捗通知
+    let progress = ConvertProgress {
+        current,
+        total,
+        current_file: track.title.clone(),
+        status: "processing".to_string(),
+        progress_percent: (current as f64 / total as f64) * 100.0,
+    };
+    
+    let _ = app_handle.emit("convert-progress", &progress);
+    
+    // ffmpegコマンドを構築
+    let mut ffmpeg_args = vec![
+        "-i".to_string(),
+        source_path.clone(),
+    ];
+    
+    // アルバムアートを追加（入力ファイルとして）
+    let has_artwork = album_data.album_artwork_path.is_some() || album_data.album_artwork_cache_path.is_some();
+    if let Some(artwork_path) = &album_data.album_artwork_path {
+        ffmpeg_args.extend(vec![
+            "-i".to_string(),
+            artwork_path.clone(),
+        ]);
+    } else if let Some(cache_path) = &album_data.album_artwork_cache_path {
+        ffmpeg_args.extend(vec![
+            "-i".to_string(),
+            cache_path.clone(),
+        ]);
+    }
+    
+    // 上書き許可
+    ffmpeg_args.push("-y".to_string());
+    
+    // マッピング設定
+    if has_artwork {
+        ffmpeg_args.extend(vec![
+            "-map".to_string(), "0".to_string(),  // 音声ストリーム
+            "-map".to_string(), "1".to_string(),  // アルバムアート
+            "-c:v".to_string(), "copy".to_string(),
+            "-disposition:v:0".to_string(), "attached_pic".to_string(),
+        ]);
+    }
+    
+    // メタデータを設定
+    ffmpeg_args.extend(vec![
+        "-metadata".to_string(), format!("title={}", track.title),
+        "-metadata".to_string(), format!("artist={}", track.artists.join(", ")),
+        "-metadata".to_string(), format!("album={}", album_data.album_title),
+        "-metadata".to_string(), format!("albumartist={}", album_data.album_artist),
+        "-metadata".to_string(), format!("track={}", track.track_number),
+        "-metadata".to_string(), format!("disc={}", track.disk_number),
+        "-metadata".to_string(), format!("date={}", album_data.release_date),
+        "-metadata".to_string(), format!("genre={}", album_data.tags.join(", ")),
+    ]);
+    
+    // フォーマット別のエンコード設定
+    match output_settings.format.as_str() {
+        "MP3" => {
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "libmp3lame".to_string(),
+            ]);
+            match output_settings.quality.as_str() {
+                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
+                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
+                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+                "V0" => ffmpeg_args.extend(vec!["-q:a".to_string(), "0".to_string()]),
+                "V2" => ffmpeg_args.extend(vec!["-q:a".to_string(), "2".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+            }
+        },
+        "M4A" => {
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "aac".to_string(),
+            ]);
+            match output_settings.quality.as_str() {
+                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
+                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
+                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+            }
+        },
+        "FLAC" => {
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "flac".to_string(),
+            ]);
+            match output_settings.quality.as_str() {
+                "0" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "0".to_string()]),
+                "5" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "5".to_string()]),
+                "8" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "8".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-compression_level".to_string(), "5".to_string()]),
+            }
+        },
+        "OGG" => {
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "libvorbis".to_string(),
+            ]);
+            match output_settings.quality.as_str() {
+                "q10" => ffmpeg_args.extend(vec!["-q:a".to_string(), "10".to_string()]),
+                "q6" => ffmpeg_args.extend(vec!["-q:a".to_string(), "6".to_string()]),
+                "q3" => ffmpeg_args.extend(vec!["-q:a".to_string(), "3".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-q:a".to_string(), "6".to_string()]),
+            }
+        },
+        "OPUS" => {
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "libopus".to_string(),
+            ]);
+            match output_settings.quality.as_str() {
+                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
+                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+                "96" => ffmpeg_args.extend(vec!["-b:a".to_string(), "96k".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+            }
+        },
+        "AAC" => {
+            // AACの場合、M4Aコンテナを使用
+            ffmpeg_args.extend(vec![
+                "-c:a".to_string(), "aac".to_string(),
+                "-f".to_string(), "mp4".to_string(),  // MP4コンテナを強制
+            ]);
+            match output_settings.quality.as_str() {
+                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
+                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
+                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+            }
+        },
+        _ => {
+            return Err(format!("サポートされていないフォーマットです: {}", output_settings.format));
+        }
+    }
+    
+    // 出力ファイルパスを追加
+    ffmpeg_args.push(output_path.to_string_lossy().to_string());
+    
+    // ffmpegコマンドを実行
+    let output = Command::new("ffmpeg")
+        .args(&ffmpeg_args)
+        .output()
+        .await
+        .map_err(|e| format!("ffmpegの実行に失敗しました: {}", e))?;
+    
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ファイル変換に失敗しました: {}", error_msg));
+    }
+    
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn convert_audio_files(
+    app_handle: AppHandle,
+    request: ConvertRequest,
+) -> Result<ConvertResult, String> {
+    let total = request.tracks.len();
+    let mut converted_files = Vec::new();
+    let mut failed_files = Vec::new();
+    
+    // 出力ディレクトリの存在確認・作成
+    let output_dir = Path::new(&request.output_settings.output_path);
+    if !output_dir.exists() {
+        fs::create_dir_all(output_dir)
+            .map_err(|e| format!("出力ディレクトリの作成に失敗しました: {}", e))?;
+    }
+    
+    for (index, track) in request.tracks.iter().enumerate() {
+        let current = index + 1;
+        
+        match convert_single_file(
+            &app_handle,
+            track,
+            &request.album_data,
+            &request.output_settings,
+            current,
+            total,
+        ).await {
+            Ok(output_path) => {
+                converted_files.push(output_path);
+                
+                // 成功通知
+                let progress = ConvertProgress {
+                    current,
+                    total,
+                    current_file: track.title.clone(),
+                    status: "completed".to_string(),
+                    progress_percent: (current as f64 / total as f64) * 100.0,
+                };
+                let _ = app_handle.emit("convert-progress", &progress);
+            }
+            Err(error) => {
+                failed_files.push(ConvertError {
+                    source_path: track.source_path.clone(),
+                    error_message: error,
+                });
+                
+                // エラー通知
+                let progress = ConvertProgress {
+                    current,
+                    total,
+                    current_file: track.title.clone(),
+                    status: "error".to_string(),
+                    progress_percent: (current as f64 / total as f64) * 100.0,
+                };
+                let _ = app_handle.emit("convert-progress", &progress);
+            }
+        }
+    }
+    
+    Ok(ConvertResult {
+        success: failed_files.is_empty(),
+        converted_files,
+        failed_files,
+        total_processed: total,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -438,7 +762,8 @@ pub fn run() {
             extract_metadata,
             process_audio_files,
             scan_directory_for_audio_files,
-            save_album_art_to_cache
+            save_album_art_to_cache,
+            convert_audio_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

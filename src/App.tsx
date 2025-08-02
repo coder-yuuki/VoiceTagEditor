@@ -45,6 +45,14 @@ interface ProgressEvent {
   status: string; // "processing" | "completed" | "error"
 }
 
+interface ConvertProgress {
+  current: number;
+  total: number;
+  currentFile: string;
+  status: string;
+  percent: number;
+}
+
 interface AlbumData {
   albumArtwork: string | null;
   albumArtworkPath?: string; // アルバムアートのファイルパスを追加
@@ -75,6 +83,7 @@ function App() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
+  const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
 
   const [tracks, setTracks] = useState<Track[]>([]);
 
@@ -690,90 +699,149 @@ ${dirPath}
       }
 
       setShowExportDialog(false);
+      setIsProcessing(true);
       
-      // TODO: 実際の出力処理をここに実装
-      console.log('=== 出力設定 ===');
-      console.log(`出力先: ${exportSettings.outputPath}`);
-      console.log(`上書きモード: ${exportSettings.overwriteMode === 'overwrite' ? '上書き' : '別名保存'}`);
-      console.log(`フォーマット: ${exportSettings.format}`);
-      console.log(`音質: ${getQualityOptions(exportSettings.format).find(opt => opt.value === exportSettings.quality)?.label || exportSettings.quality}`);
-      console.log('');
-
-      // アルバムアート情報を判定
-      const getAlbumArtInfo = () => {
-        if (albumData.albumArtworkPath) {
-          return `ファイル: ${albumData.albumArtworkPath}`;
-        } else if (albumData.albumArtworkCachePath) {
-          return `キャッシュ: ${albumData.albumArtworkCachePath}`;
-        } else if (albumData.albumArtwork) {
-          return 'トラックから抽出されたアルバムアート（キャッシュなし）';
-        } else {
-          return 'なし';
+      // トラックデータを変換用の形式に変換
+      const convertTracks = tracks.map(track => ({
+        source_path: track.filePath || '',
+        disk_number: track.diskNumber || '1',
+        track_number: track.trackNumber || '1',
+        title: track.title,
+        artists: track.artists,
+      }));
+      
+      // アルバムデータを変換用の形式に変換
+      const convertAlbumData = {
+        album_title: albumData.albumTitle,
+        album_artist: albumData.albumArtist,
+        release_date: albumData.releaseDate,
+        tags: albumData.tags,
+        album_artwork_path: albumData.albumArtworkPath,
+        album_artwork_cache_path: albumData.albumArtworkCachePath,
+        album_artwork: albumData.albumArtwork,
+      };
+      
+      // 音質設定をバックエンド形式に変換
+      const convertQuality = (format: string, quality: string): string => {
+        switch (format) {
+          case 'MP3':
+          case 'AAC':
+            switch (quality) {
+              case 'highest': return '320';
+              case 'high': return '256';
+              case 'medium': return '192';
+              case 'low': return '128';
+              default: return '192';
+            }
+          case 'M4A':
+            switch (quality) {
+              case 'highest': return '256';
+              case 'high': return '192';
+              case 'medium': return '128';
+              case 'low': return '96';
+              default: return '192';
+            }
+          case 'FLAC':
+            switch (quality) {
+              case 'highest': return '8';
+              case 'high': return '5';
+              case 'medium': return '5';
+              case 'low': return '0';
+              default: return '5';
+            }
+          case 'OGG':
+            switch (quality) {
+              case 'highest': return 'q10';
+              case 'high': return 'q6';
+              case 'medium': return 'q6';
+              case 'low': return 'q3';
+              default: return 'q6';
+            }
+          case 'OPUS':
+            switch (quality) {
+              case 'highest': return '320';
+              case 'high': return '192';
+              case 'medium': return '128';
+              case 'low': return '96';
+              default: return '128';
+            }
+          default:
+            return '192';
         }
       };
       
-      console.log('=== 出力処理開始 ===');
-      console.log('アルバム情報:');
-      console.log(`  アルバム名: ${albumData.albumTitle}`);
-      console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
-      console.log(`  リリース日: ${albumData.releaseDate}`);
-      console.log(`  タグ: ${albumData.tags.join(', ')}`);
-      console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
-      console.log('');
+      // 出力設定を変換用の形式に変換
+      const convertOutputSettings = {
+        output_path: exportSettings.outputPath,
+        format: exportSettings.format,
+        quality: convertQuality(exportSettings.format, exportSettings.quality),
+        overwrite_mode: exportSettings.overwriteMode,
+      };
       
-      console.log('=== トラック変換情報 ===');
-      tracks.forEach((track, index) => {
-        // ファイル名に使えない文字をサニタイズ
-        const sanitizeForPath = (str: string) => {
-          return str.replace(/[/\:*?"<>|]/g, '_');
-        };
+      // 変換リクエストを作成
+      const convertRequest = {
+        tracks: convertTracks,
+        album_data: convertAlbumData,
+        output_settings: convertOutputSettings,
+      };
+      
+      console.log('=== 変換処理開始 ===');
+      console.log('リクエストデータ:', convertRequest);
+      
+      // 進捗イベントリスナーを設定
+      const unlistenProgress = await listen('convert-progress', (event: any) => {
+        const progress = event.payload;
+        console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
         
-        const sanitizedAlbumArtist = sanitizeForPath(albumData.albumArtist);
-        const sanitizedAlbumTitle = sanitizeForPath(albumData.albumTitle);
-        const sanitizedTrackTitle = sanitizeForPath(track.title);
-        
-        const outputFileName = `${track.diskNumber.padStart(2, '0')}-${track.trackNumber.padStart(2, '0')} ${sanitizedTrackTitle}.${exportSettings.format.toLowerCase()}`;
-        const outputDir = `${exportSettings.outputPath}/${sanitizedAlbumArtist}/${sanitizedAlbumTitle}`;
-        const outputFilePath = `${outputDir}/${outputFileName}`;
-        
-        console.log(`--- トラック ${index + 1} ---`);
-        console.log(`● 入力ファイル: ${track.filePath || 'なし'}`);
-        console.log(`● 出力ファイル: ${outputFilePath}`);
-        console.log('');
-        
-        console.log('● 変換設定:');
-        console.log(`  フォーマット: ${exportSettings.format}`);
-        console.log(`  音質: ${getQualityOptions(exportSettings.format).find(opt => opt.value === exportSettings.quality)?.label || exportSettings.quality}`);
-        console.log(`  上書きモード: ${exportSettings.overwriteMode === 'overwrite' ? '上書き' : '別名保存'}`);
-        console.log('');
-        
-        console.log('● 埋め込みメタデータ:');
-        console.log(`  タイトル: ${track.title}`);
-        console.log(`  アーティスト: ${track.artists.join(', ') || 'なし'}`);
-        console.log(`  アルバム名: ${albumData.albumTitle}`);
-        console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
-        console.log(`  ディスク番号: ${track.diskNumber.padStart(2, '0')}`);
-        console.log(`  トラック番号: ${track.trackNumber.padStart(2, '0')}`);
-        console.log(`  リリース日: ${albumData.releaseDate}`);
-        console.log(`  ジャンル/タグ: ${albumData.tags.join(', ') || 'なし'}`);
-        console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
-        console.log('');
-        
-        console.log('● 変換処理:');
-        console.log(`  元ファイル読み込み → メタデータ抽出 → ${exportSettings.format}形式で変換 → メタデータ埋め込み → 出力`);
-        console.log('=====================================');
-        console.log('');
+        // ここで進捗表示UIを更新可能
+        setConvertProgress({
+          current: progress.current,
+          total: progress.total,
+          currentFile: progress.current_file,
+          status: progress.status,
+          percent: progress.progress_percent,
+        });
       });
       
-      console.log('=== 出力処理完了 ===');
-      
-      await confirm('出力処理が完了しました。コンソールで設定と情報を確認してください。', {
-        title: '出力完了',
-        kind: 'info'
-      });
+      try {
+        // Tauriコマンドを呼び出し
+        const result = await invoke('convert_audio_files', { request: convertRequest });
+        console.log('変換結果:', result);
+        
+        setIsProcessing(false);
+        setConvertProgress(null);
+        
+        // 結果ダイアログを表示
+        const resultMessage = result.success 
+          ? `変換が完了しました！\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル`
+          : `変換が完了しましたが、一部エラーがありました。\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル\nエラー詳細:${result.failed_files.map(f => `• ${f.source_path}: ${f.error_message}`).join('')}`;
+          
+        await confirm(resultMessage, {
+          title: result.success ? '変換完了' : '変換完了（一部エラー）',
+          kind: result.success ? 'info' : 'warning'
+        });
+        
+        unlistenProgress();
+        
+      } catch (invokeError) {
+        console.error('Tauri invoke エラー:', invokeError);
+        setIsProcessing(false);
+        setConvertProgress(null);
+        unlistenProgress();
+        
+        await confirm(`変換処理中にエラーが発生しました。
+
+エラー: ${invokeError}`, {
+          title: 'エラー',
+          kind: 'error'
+        });
+      }
       
     } catch (error) {
       console.error('出力処理エラー:', error);
+      setIsProcessing(false);
+      setConvertProgress(null);
+      
       await confirm(`出力処理中にエラーが発生しました。
 
 エラー: ${error}`, {
@@ -933,9 +1001,11 @@ ${dirPath}
               <div class="flex items-center gap-2 text-sm text-blue-600">
                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 <span>
-                  {processingProgress ? 
-                    `処理中... ${processingProgress.current}/${processingProgress.total} (${processingProgress.file_path.split('/').pop() || processingProgress.file_path})` : 
-                    'オーディオファイルを処理中...'
+                  {convertProgress ? 
+                    `変換中... ${convertProgress.current}/${convertProgress.total} - ${convertProgress.currentFile} (${Math.round(convertProgress.percent)}%)` :
+                    processingProgress ? 
+                      `処理中... ${processingProgress.current}/${processingProgress.total} (${processingProgress.file_path.split('/').pop() || processingProgress.file_path})` : 
+                      'オーディオファイルを処理中...'
                   }
                 </span>
               </div>
