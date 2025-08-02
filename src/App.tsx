@@ -1,7 +1,7 @@
 import { useState, useEffect } from "preact/hooks";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { listen } from '@tauri-apps/api/event'
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import "./App.css";
 
 interface Track {
@@ -12,6 +12,36 @@ interface Track {
   artists: string[];
   currentArtistInput: string;
   filePath?: string; // ファイルパスを追加
+}
+
+interface AudioMetadata {
+  title?: string;
+  artist?: string;
+  album_artist?: string;
+  album?: string;
+  track_number?: string;
+  disk_number?: string;
+  date?: string;
+  genre?: string;
+  comment?: string;
+  duration?: string;
+  bitrate?: string;
+  sample_rate?: string;
+  codec?: string;
+  album_art?: string; // base64 encoded
+}
+
+interface AudioFileResult {
+  file_path: string;
+  metadata?: AudioMetadata;
+  error?: string;
+}
+
+interface ProgressEvent {
+  current: number;
+  total: number;
+  file_path: string;
+  status: string; // "processing" | "completed" | "error"
 }
 
 interface AlbumData {
@@ -34,6 +64,9 @@ function App() {
     currentTagInput: "",
   });
 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
+
   const [tracks, setTracks] = useState<Track[]>([
     {
       id: "1",
@@ -53,6 +86,128 @@ function App() {
     },
   ]);
 
+  // ファイルタイプを判定する関数
+  const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
+    const audioExtensions = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.opus', '.aac', '.wma'];
+    const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+    
+    if (imageExtensions.includes(fileExtension)) {
+      return 'image';
+    } else if (audioExtensions.includes(fileExtension)) {
+      return 'audio';
+    } else {
+      return 'unsupported';
+    }
+  };
+
+  // 新しいトラックIDを生成
+  const generateTrackId = (): string => {
+    return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  };
+
+  // オーディオファイルを処理する関数
+  const processAudioFiles = async (filePaths: string[]) => {
+    try {
+      setIsProcessing(true);
+      
+      // FFmpegのチェック
+      const ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
+      if (!ffmpegAvailable) {
+        await confirm('オーディオファイルの処理にはFFmpegが必要です。\n\nFFmpegをインストールしてください。\nhttps://ffmpeg.org/download.html', {
+          title: 'FFmpegがインストールされていません',
+          kind: 'warning'
+        });
+        return;
+      }
+
+      // オーディオファイルを処理
+      const results = await invoke<AudioFileResult[]>('process_audio_files', {
+        filePaths: filePaths
+      });
+
+      // 結果を処理してトラックリストに追加
+      const newTracks: Track[] = [];
+      let hasAlbumArt = false;
+      let albumArtData = '';
+
+      for (const result of results) {
+        if (result.error) {
+          console.error(`ファイル ${result.file_path} の処理エラー: ${result.error}`);
+          continue;
+        }
+
+        if (result.metadata) {
+          const metadata = result.metadata;
+          
+          // アルバムアートを取得（最初のファイルからのみ）
+          if (!hasAlbumArt && metadata.album_art) {
+            hasAlbumArt = true;
+            albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
+            setAlbumData(prev => ({
+              ...prev,
+              albumArtwork: albumArtData,
+              albumTitle: metadata.album || prev.albumTitle,
+              albumArtist: metadata.album_artist || prev.albumArtist,
+              releaseDate: metadata.date || prev.releaseDate
+            }));
+          }
+
+          // トラック情報を作成
+          const newTrack: Track = {
+            id: generateTrackId(),
+            diskNumber: metadata.disk_number || '01',
+            trackNumber: metadata.track_number || '01',
+            title: metadata.title || '未設定',
+            artists: metadata.artist ? [metadata.artist] : [],
+            currentArtistInput: '',
+            filePath: result.file_path
+          };
+
+          newTracks.push(newTrack);
+        }
+      }
+
+      // トラックリストに追加
+      if (newTracks.length > 0) {
+        setTracks(prev => [...prev, ...newTracks]);
+      }
+
+    } catch (error) {
+      console.error('オーディオファイルの処理エラー:', error);
+      await confirm(`オーディオファイルの処理中にエラーが発生しました。\n\nエラー: ${error}`, {
+        title: 'エラー',
+        kind: 'error'
+      });
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress(null);
+    }
+  };
+
+  // プログレスイベントリスナー
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupProgressListener = async () => {
+      try {
+        unlisten = await listen<ProgressEvent>('audio-processing-progress', (event) => {
+          setProcessingProgress(event.payload);
+        });
+      } catch (error) {
+        console.error('プログレスリスナーの設定に失敗:', error);
+      }
+    };
+
+    setupProgressListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
   // Tauriのファイルドロップイベントリスナー
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -67,27 +222,49 @@ function App() {
           console.log('Dropped paths:', paths);
           console.log('Number of paths dropped:', paths.length);
           
-          if (paths.length > 0) {
-            const filePath = paths[0];
-            console.log('Processing file path:', filePath);
-          
-            // ファイル拡張子をチェック
-            const supportedExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
-            const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
-            
-            if (!supportedExtensions.includes(fileExtension)) {
-              console.error('サポートされていないファイル形式:', fileExtension);
-              return;
-            } else{
-              console.log('Supported file format:', fileExtension);
-            }
+          if (paths.length === 0) return;
 
+          // ファイルタイプで分類
+          const imagePaths: string[] = [];
+          const audioPaths: string[] = [];
+          const unsupportedPaths: string[] = [];
+
+          for (const filePath of paths) {
+            const fileType = getFileType(filePath);
+            switch (fileType) {
+              case 'image':
+                imagePaths.push(filePath);
+                break;
+              case 'audio':
+                audioPaths.push(filePath);
+                break;
+              default:
+                unsupportedPaths.push(filePath);
+                break;
+            }
+          }
+
+          // サポートされていないファイルがある場合は警告
+          if (unsupportedPaths.length > 0) {
+            console.warn('サポートされていないファイル:', unsupportedPaths);
+          }
+
+          // 画像ファイルの処理（最初の1つだけ）
+          if (imagePaths.length > 0) {
+            const filePath = imagePaths[0];
+            console.log('Processing image file:', filePath);
             const artworkUrl = convertFileSrc(filePath);
             setAlbumData(prev => ({
               ...prev,
               albumArtwork: artworkUrl,
-              albumArtworkPath: filePath // ファイルパスも保存
+              albumArtworkPath: filePath
             }));
+          }
+
+          // オーディオファイルの処理
+          if (audioPaths.length > 0) {
+            console.log('Processing audio files:', audioPaths);
+            await processAudioFiles(audioPaths);
           }
         });
       } catch (error) {
@@ -379,6 +556,17 @@ function App() {
             >
               ソート
             </button>
+            {isProcessing && (
+              <div class="flex items-center gap-2 text-sm text-blue-600">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span>
+                  {processingProgress ? 
+                    `処理中... ${processingProgress.current}/${processingProgress.total} (${processingProgress.file_path.split('/').pop() || processingProgress.file_path})` : 
+                    'オーディオファイルを処理中...'
+                  }
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
