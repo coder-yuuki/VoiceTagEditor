@@ -1,6 +1,8 @@
 use base64::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
+use std::fs;
+use std::path::Path;
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 
@@ -371,6 +373,58 @@ async fn process_audio_files(
     Ok(results)
 }
 
+#[tauri::command]
+async fn save_album_art_to_cache(
+    base64_data: String,
+    album_title: String,
+    album_artist: String,
+) -> Result<String, String> {
+    // キャッシュディレクトリのパスを取得
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "ホームディレクトリの取得に失敗しました")?;
+    
+    let cache_dir = Path::new(&home_dir)
+        .join(".cache")
+        .join("VoiceTagEditor")
+        .join("album_art");
+    
+    // キャッシュディレクトリを作成
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("キャッシュディレクトリの作成に失敗しました: {}", e))?;
+    
+    // ファイル名を生成（アルバム名とアーティスト名から）
+    let file_name = format!("{}_{}.jpg", 
+        sanitize_filename(&album_title),
+        sanitize_filename(&album_artist)
+    );
+    
+    let file_path = cache_dir.join(file_name);
+    
+    // Base64データをデコード
+    let image_data = BASE64_STANDARD.decode(&base64_data)
+        .map_err(|e| format!("Base64デコードに失敗しました: {}", e))?;
+    
+    // ファイルに書き込み
+    fs::write(&file_path, image_data)
+        .map_err(|e| format!("ファイルの書き込みに失敗しました: {}", e))?;
+    
+    // パスを文字列として返す
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+fn sanitize_filename(name: &str) -> String {
+    // ファイル名に使えない文字を置換
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -382,7 +436,8 @@ pub fn run() {
             check_ffmpeg,
             extract_metadata,
             process_audio_files,
-            scan_directory_for_audio_files
+            scan_directory_for_audio_files,
+            save_album_art_to_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

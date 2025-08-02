@@ -47,6 +47,7 @@ interface ProgressEvent {
 interface AlbumData {
   albumArtwork: string | null;
   albumArtworkPath?: string; // アルバムアートのファイルパスを追加
+  albumArtworkCachePath?: string; // キャッシュされたアルバムアートのパス
   albumTitle: string;
   albumArtist: string;
   releaseDate: string;
@@ -176,13 +177,34 @@ function App() {
           if (!hasAlbumArt && metadata.album_art) {
             hasAlbumArt = true;
             albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
-            setAlbumData(prev => ({
-              ...prev,
-              albumArtwork: albumArtData,
-              albumTitle: metadata.album || prev.albumTitle,
-              albumArtist: metadata.album_artist || prev.albumArtist,
-              releaseDate: metadata.date || prev.releaseDate
-            }));
+            
+            // アルバムアートをキャッシュに保存
+            try {
+              const cachePath = await invoke<string>('save_album_art_to_cache', {
+                base64Data: metadata.album_art,
+                albumTitle: metadata.album || 'Unknown Album',
+                albumArtist: metadata.album_artist || 'Unknown Artist'
+              });
+              
+              setAlbumData(prev => ({
+                ...prev,
+                albumArtwork: albumArtData,
+                albumArtworkCachePath: cachePath,
+                albumTitle: metadata.album || prev.albumTitle,
+                albumArtist: metadata.album_artist || prev.albumArtist,
+                releaseDate: metadata.date || prev.releaseDate
+              }));
+            } catch (error) {
+              console.error('アルバムアートキャッシュ保存エラー:', error);
+              // キャッシュ保存に失敗してもアルバムアートは表示
+              setAlbumData(prev => ({
+                ...prev,
+                albumArtwork: albumArtData,
+                albumTitle: metadata.album || prev.albumTitle,
+                albumArtist: metadata.album_artist || prev.albumArtist,
+                releaseDate: metadata.date || prev.releaseDate
+              }));
+            }
           }
 
           // トラック情報を作成
@@ -536,6 +558,91 @@ ${dirPath}
       console.error("Error showing dialog:", error);
     }
   };
+  // 出力処理
+  const handleExport = async () => {
+    if (tracks.length === 0) {
+      return; // データがない場合は何もしない
+    }
+
+    try {
+      // タグ情報を使ってファイルを変換・書き出し
+      const exportData = {
+        albumData: {
+          albumTitle: albumData.albumTitle,
+          albumArtist: albumData.albumArtist,
+          releaseDate: albumData.releaseDate,
+          tags: albumData.tags,
+          albumArtworkPath: albumData.albumArtworkPath
+        },
+        tracks: tracks.map(track => ({
+          id: track.id,
+          diskNumber: track.diskNumber,
+          trackNumber: track.trackNumber,
+          title: track.title,
+          artists: track.artists,
+          filePath: track.filePath
+        }))
+      };
+
+      // アルバムアート情報を判定
+      const getAlbumArtInfo = () => {
+        if (albumData.albumArtworkPath) {
+          return `ファイル: ${albumData.albumArtworkPath}`;
+        } else if (albumData.albumArtworkCachePath) {
+          return `キャッシュ: ${albumData.albumArtworkCachePath}`;
+        } else if (albumData.albumArtwork) {
+          return 'トラックから抽出されたアルバムアート（キャッシュなし）';
+        } else {
+          return 'なし';
+        }
+      };
+      
+      console.log('=== 出力処理開始 ===');
+      console.log('アルバム情報:');
+      console.log(`  アルバム名: ${albumData.albumTitle}`);
+      console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
+      console.log(`  リリース日: ${albumData.releaseDate}`);
+      console.log(`  タグ: ${albumData.tags.join(', ')}`);
+      console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
+      console.log('');
+      
+      console.log('トラック情報:');
+      tracks.forEach((track, index) => {
+        console.log(`--- トラック ${index + 1} ---`);
+        console.log(`  ファイルパス: ${track.filePath || 'なし'}`);
+        console.log(`  ディスク番号: ${track.diskNumber}`);
+        console.log(`  トラック番号: ${track.trackNumber}`);
+        console.log(`  タイトル: ${track.title}`);
+        console.log(`  アーティスト: ${track.artists.join(', ') || 'なし'}`);
+        console.log(`  アルバム名: ${albumData.albumTitle}`);
+        console.log(`  アルバムアーティスト: ${albumData.albumArtist}`);
+        console.log(`  リリース日: ${albumData.releaseDate}`);
+        console.log(`  タグ: ${albumData.tags.join(', ')}`);
+        console.log(`  アルバムアート: ${getAlbumArtInfo()}`);
+        console.log('');
+      });
+      
+      console.log('=== 出力処理完了 ===');
+      
+      // TODO: Tauriコマンドを呼び出してファイル変換・書き出し処理を実行
+      // await invoke('export_audio_files', { exportData });
+      
+      await confirm('出力処理が完了しました。コンソールでタグ情報を確認してください。', {
+        title: '出力完了',
+        kind: 'info'
+      });
+      
+    } catch (error) {
+      console.error('出力処理エラー:', error);
+      await confirm(`出力処理中にエラーが発生しました。
+
+エラー: ${error}`, {
+        title: 'エラー',
+        kind: 'error'
+      });
+    }
+  };
+
   // 一括削除処理
   const handleClearAll = async () => {
     if (tracks.length === 0) {
@@ -567,7 +674,8 @@ ${dirPath}
           tags: [],
           currentTagInput: '',
           albumArtwork: '',
-          albumArtworkPath: ''
+          albumArtworkPath: '',
+          albumArtworkCachePath: ''
         });
         console.log("All data cleared successfully");
       }
@@ -694,14 +802,25 @@ ${dirPath}
             )}
           </div>
           
-          {/* 一括削除ボタン */}
-          <button 
-            onClick={handleClearAll}
-            disabled={tracks.length === 0}
-            class="px-3 py-1 border border-red-300 rounded bg-red-500 text-white text-xs hover:bg-red-600 hover:border-red-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-          >
-            🗑️ すべて削除
-          </button>
+          <div class="flex items-center gap-2">
+            {/* 一括削除ボタン */}
+            <button 
+              onClick={handleClearAll}
+              disabled={tracks.length === 0}
+              class="px-3 py-1 border border-red-300 rounded bg-red-500 text-white text-xs hover:bg-red-600 hover:border-red-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+            >
+              🗑️ すべて削除
+            </button>
+            
+            {/* 出力ボタン */}
+            <button 
+              onClick={handleExport}
+              disabled={tracks.length === 0}
+              class="px-3 py-1 border border-green-300 rounded bg-green-500 text-white text-xs hover:bg-green-600 hover:border-green-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+            >
+              📤 出力
+            </button>
+          </div>
         </div>
 
         <div class="flex-1 overflow-auto">
