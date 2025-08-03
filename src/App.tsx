@@ -30,6 +30,7 @@ interface AudioMetadata {
   sample_rate?: string;
   codec?: string;
   album_art?: string; // base64 encoded
+  tags?: string[]; // TXXX tags
 }
 
 interface AudioFileResult {
@@ -51,6 +52,18 @@ interface ConvertProgress {
   currentFile: string;
   status: string;
   percent: number;
+}
+
+interface ConvertResult {
+  success: boolean;
+  converted_files: string[];
+  failed_files: ConvertError[];
+  total_processed: number;
+}
+
+interface ConvertError {
+  source_path: string;
+  error_message: string;
 }
 
 interface AlbumData {
@@ -237,6 +250,7 @@ function App() {
       const newTracks: Track[] = [];
       let hasAlbumArt = false;
       let albumArtData = '';
+      let allTags: string[] = [];
 
       for (const result of results) {
         if (result.error) {
@@ -280,6 +294,15 @@ function App() {
               }));
             }
           }
+          
+          // タグを収集（重複を避けて追加）
+          if (metadata.tags && metadata.tags.length > 0) {
+            for (const tag of metadata.tags) {
+              if (!allTags.includes(tag)) {
+                allTags.push(tag);
+              }
+            }
+          }
 
           // トラック情報を作成
           const newTrack: Track = {
@@ -299,6 +322,21 @@ function App() {
       // トラックリストに追加
       if (newTracks.length > 0) {
         setTracks(prev => [...prev, ...newTracks]);
+      }
+      
+      // 収集したタグをアルバムデータに追加
+      if (allTags.length > 0) {
+        setAlbumData(prev => {
+          const existingTags = new Set(prev.tags);
+          const newTags = allTags.filter(tag => !existingTags.has(tag));
+          if (newTags.length > 0) {
+            return {
+              ...prev,
+              tags: [...prev.tags, ...newTags]
+            };
+          }
+          return prev;
+        });
       }
 
     } catch (error) {
@@ -743,7 +781,7 @@ ${dirPath}
       
       try {
         // Tauriコマンドを呼び出し
-        const result = await invoke('convert_audio_files', { request: convertRequest });
+        const result = await invoke<ConvertResult>('convert_audio_files', { request: convertRequest });
         console.log('変換結果:', result);
         
         setIsProcessing(false);
