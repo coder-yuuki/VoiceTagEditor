@@ -565,8 +565,8 @@ async fn convert_single_file(
     
     let output_filename = format!(
         "{:02}-{:02} {}.{}",
-        track.track_number.parse::<u32>().unwrap_or(1),
         track.disk_number.parse::<u32>().unwrap_or(1),
+        track.track_number.parse::<u32>().unwrap_or(1),
         sanitize_filename(&track.title),
         file_extension
     );
