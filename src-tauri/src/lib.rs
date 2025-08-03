@@ -22,6 +22,7 @@ pub struct AudioMetadata {
     pub sample_rate: Option<String>,
     pub codec: Option<String>,
     pub album_art: Option<String>, // base64 encoded
+    pub tags: Option<Vec<String>>, // TXXXフレームから読み取ったタグ
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -289,6 +290,7 @@ async fn extract_metadata_internal(file_path: &str) -> Result<AudioMetadata, Str
         sample_rate: None,
         codec: None,
         album_art: None,
+        tags: None,
     };
 
     // Extract metadata from tags
@@ -308,6 +310,9 @@ async fn extract_metadata_internal(file_path: &str) -> Result<AudioMetadata, Str
         metadata.date = get_tag_value(tags, &["date", "Date", "DATE", "year", "Year", "YEAR"]);
         metadata.genre = get_tag_value(tags, &["genre", "Genre", "GENRE"]);
         metadata.comment = get_tag_value(tags, &["comment", "Comment", "COMMENT", "DESCRIPTION"]);
+        
+        // TXXXフレームからカスタムタグを抽出
+        metadata.tags = extract_txxx_tags(tags);
     }
 
     // Extract duration
@@ -349,6 +354,34 @@ fn get_tag_value(tags: &serde_json::Value, possible_keys: &[&str]) -> Option<Str
             }
         }
     }
+    None
+}
+
+fn extract_txxx_tags(tags: &serde_json::Value) -> Option<Vec<String>> {
+    // TXXXフレームを探す（大文字小文字の違いに対応）
+    let txxx_keys = ["TXXX", "txxx", "Txxx"];
+    
+    for key in txxx_keys {
+        if let Some(txxx_value) = tags.get(key).and_then(|v| v.as_str()) {
+            // "TAG="で始まるTXXXフレームを探す
+            if txxx_value.starts_with("TAG=") {
+                let tag_content = &txxx_value[4..]; // "TAG="を除去
+                if !tag_content.trim().is_empty() {
+                    // セミコロンで分割してタグリストを作成
+                    let tag_list: Vec<String> = tag_content
+                        .split(';')
+                        .map(|tag| tag.trim().to_string())
+                        .filter(|tag| !tag.is_empty())
+                        .collect();
+                    
+                    if !tag_list.is_empty() {
+                        return Some(tag_list);
+                    }
+                }
+            }
+        }
+    }
+    
     None
 }
 
@@ -609,6 +642,13 @@ async fn convert_single_file(
     if !track.artists.is_empty() {
         ffmpeg_args.extend(vec![
             "-metadata".to_string(), format!("artist={}", track.artists.join(";")),
+        ]);
+    }
+    
+    // タグをTXXXフレームとして追加
+    if !album_data.tags.is_empty() {
+        ffmpeg_args.extend(vec![
+            "-metadata".to_string(), format!("TXXX=TAG={}", album_data.tags.join(";")),
         ]);
     }
     
