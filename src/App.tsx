@@ -1162,13 +1162,13 @@ ${dirPath}
               </div>
             </div>
           )}
-          <table class="w-full">
+          <table class="w-full table-fixed">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr>
-                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">削除</th>
-                <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Disk</th>
-                <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Track</th>
-                <th class="px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">タイトル</th>
+                <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">削除</th>
+                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Disk</th>
+                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Track</th>
+                <th class="w-80 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">タイトル</th>
                 <th class="px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">アーティスト</th>
               </tr>
             </thead>
@@ -1208,17 +1208,30 @@ ${dirPath}
                     />
                   </td>
                   <td class="px-2 py-2 border-b border-gray-200">
-                    <input
-                      type="text"
+                    <textarea
                       value={track.title}
-                      onInput={(e) => handleTrackChange(track.id, 'title', e.currentTarget.value)}
-                      class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
+                      onInput={(e) => {
+                        handleTrackChange(track.id, 'title', e.currentTarget.value);
+                        // Auto-resize textarea
+                        e.currentTarget.style.height = 'auto';
+                        e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+                      }}
+                      class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500 resize-none overflow-hidden min-h-[1.5rem]"
+                      rows="1"
+                      style={{
+                        height: 'auto',
+                        minHeight: '1.5rem'
+                      }}
                     />
                   </td>
                   <td class="px-2 py-2 border-b border-gray-200">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-start gap-2">
                       {/* アーティスト入力フィールド（チップ内蔵） */}
-                      <div class="flex-1 max-w-xs min-h-[1.75rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
+                      <div class="flex-1 min-h-[1.75rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-start"
+                           style={{
+                             maxWidth: 'none',
+                             wordBreak: 'break-word'
+                           }}>
                         {/* アーティストチップ表示 */}
                         {track.artists.map((artist, index) => {
                           const chipColor = getChipColor(artist);
@@ -1226,11 +1239,21 @@ ${dirPath}
                             <div 
                               key={`${artist}-${index}`}
                               class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity group"
-                              style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
+                              style={{ 
+                                backgroundColor: chipColor.backgroundColor, 
+                                color: chipColor.color,
+                                maxWidth: '100%',
+                                wordBreak: 'break-word'
+                              }}
                               onClick={() => copyArtist(artist)}
                               title={`クリックで「${artist}」をコピー`}
                             >
-                              <span>{artist}</span>
+                              <span style={{ 
+                                wordBreak: 'break-word',
+                                overflowWrap: 'break-word',
+                                whiteSpace: 'normal',
+                                lineHeight: '1.2'
+                              }}>{artist}</span>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1261,7 +1284,7 @@ ${dirPath}
                       {track.artists.length > 0 && (
                         <button
                           onClick={() => copyAllArtists(track.artists)}
-                          class="px-2 py-1 border border-blue-300 rounded bg-blue-50 text-blue-600 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-1 font-medium"
+                          class="px-2 py-1 border border-blue-300 rounded bg-blue-50 text-blue-600 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-1 font-medium self-start flex-shrink-0"
                           title={`全アーティストをコピー: ${track.artists.join('; ')}`}
                         >
                           📋 コピー
