@@ -582,37 +582,38 @@ async fn convert_single_file(
     ];
     
     // アルバムアートを追加（入力ファイルとして）
-    // 空文字列を除外してアルバムアートの有無を判定
-    let has_external_artwork = album_data.album_artwork_path.as_ref()
-        .map(|p| !p.trim().is_empty())
-        .unwrap_or(false)
-        || album_data.album_artwork_cache_path.as_ref()
-        .map(|p| !p.trim().is_empty())
-        .unwrap_or(false);
+    let mut artwork_input_added = false;
     
-    if has_external_artwork {
-        if let Some(artwork_path) = &album_data.album_artwork_path {
-            if !artwork_path.trim().is_empty() {
-                ffmpeg_args.extend(vec![
-                    "-i".to_string(),
-                    artwork_path.clone(),
-                ]);
-            }
-        } else if let Some(cache_path) = &album_data.album_artwork_cache_path {
-            if !cache_path.trim().is_empty() {
+    // 外部アルバムアートファイルの追加を試行
+    if let Some(artwork_path) = &album_data.album_artwork_path {
+        if !artwork_path.trim().is_empty() && std::path::Path::new(artwork_path).exists() {
+            ffmpeg_args.extend(vec![
+                "-i".to_string(),
+                artwork_path.clone(),
+            ]);
+            artwork_input_added = true;
+        }
+    }
+    
+    // 外部アルバムアートがない場合はキャッシュを試行
+    if !artwork_input_added {
+        if let Some(cache_path) = &album_data.album_artwork_cache_path {
+            if !cache_path.trim().is_empty() && std::path::Path::new(cache_path).exists() {
                 ffmpeg_args.extend(vec![
                     "-i".to_string(),
                     cache_path.clone(),
                 ]);
+                artwork_input_added = true;
             }
         }
     }
+
     
     // 上書き許可
     ffmpeg_args.push("-y".to_string());
     
     // マッピング設定（MP3専用）
-    if has_external_artwork {
+    if artwork_input_added {
         // 音声 + 外部アルバムアート
         ffmpeg_args.extend(vec![
             "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
