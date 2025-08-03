@@ -67,7 +67,7 @@ interface AlbumData {
 interface ExportSettings {
   outputPath: string;
   overwriteMode: 'overwrite' | 'rename'; // 上書き or 別名
-  format: 'MP3' | 'M4A' | 'FLAC' | 'OGG' | 'AAC';
+  format: 'MP3';
   quality: 'highest' | 'high' | 'medium' | 'low';
 }
 
@@ -100,34 +100,6 @@ function App() {
   const getQualityOptions = (format: ExportSettings['format']) => {
     switch (format) {
       case 'MP3':
-      case 'AAC':
-        return [
-          { value: 'highest', label: '最高 (320kbps)' },
-          { value: 'high', label: '高 (256kbps)' },
-          { value: 'medium', label: '中 (192kbps)' },
-          { value: 'low', label: '低 (128kbps)' }
-        ];
-      case 'M4A':
-        return [
-          { value: 'highest', label: '最高 (256kbps)' },
-          { value: 'high', label: '高 (192kbps)' },
-          { value: 'medium', label: '中 (128kbps)' },
-          { value: 'low', label: '低 (96kbps)' }
-        ];
-      case 'FLAC':
-        return [
-          { value: 'highest', label: '最高 (24bit/96kHz)' },
-          { value: 'high', label: '高 (24bit/48kHz)' },
-          { value: 'medium', label: '中 (16bit/48kHz)' },
-          { value: 'low', label: '低 (16bit/44.1kHz)' }
-        ];
-      case 'OGG':
-        return [
-          { value: 'highest', label: '最高 (320kbps)' },
-          { value: 'high', label: '高 (192kbps)' },
-          { value: 'medium', label: '中 (128kbps)' },
-          { value: 'low', label: '低 (96kbps)' }
-        ];
       default:
         return [
           { value: 'highest', label: '最高' },
@@ -724,37 +696,12 @@ ${dirPath}
       const convertQuality = (format: string, quality: string): string => {
         switch (format) {
           case 'MP3':
-          case 'AAC':
             switch (quality) {
               case 'highest': return '320';
               case 'high': return '256';
               case 'medium': return '192';
               case 'low': return '128';
               default: return '192';
-            }
-          case 'M4A':
-            switch (quality) {
-              case 'highest': return '256';
-              case 'high': return '192';
-              case 'medium': return '128';
-              case 'low': return '96';
-              default: return '192';
-            }
-          case 'FLAC':
-            switch (quality) {
-              case 'highest': return '8';
-              case 'high': return '5';
-              case 'medium': return '5';
-              case 'low': return '0';
-              default: return '5';
-            }
-          case 'OGG':
-            switch (quality) {
-              case 'highest': return 'q10';
-              case 'high': return 'q6';
-              case 'medium': return 'q6';
-              case 'low': return 'q3';
-              default: return 'q6';
             }
           default:
             return '192';
@@ -1186,10 +1133,6 @@ ${dirPath}
                 class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
               >
                 <option value="MP3">MP3</option>
-                <option value="M4A">M4A</option>
-                <option value="FLAC">FLAC</option>
-                <option value="OGG">OGG</option>
-                <option value="AAC">AAC</option>
               </select>
             </div>
 
