@@ -605,10 +605,10 @@ async fn convert_single_file(
         "-metadata".to_string(), format!("genre={}", album_data.tags.join(", ")),
     ]);
     
-    // アーティストを個別に追加
-    for artist in &track.artists {
+    // アーティストをセミコロン区切りで追加
+    if !track.artists.is_empty() {
         ffmpeg_args.extend(vec![
-            "-metadata".to_string(), format!("artist={}", artist),
+            "-metadata".to_string(), format!("artist={}", track.artists.join(";")),
         ]);
     }
     
@@ -617,6 +617,7 @@ async fn convert_single_file(
     // MP3エンコード設定
     ffmpeg_args.extend(vec![
         "-c:a".to_string(), "libmp3lame".to_string(),
+        "-id3v2_version".to_string(), "3".to_string(),
     ]);
     
     match output_settings.quality.as_str() {
