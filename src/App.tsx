@@ -693,6 +693,61 @@ ${dirPath}
     }
   };
 
+  // アーティスト入力のエンターキーハンドラー
+  const handleArtistKeyDown = (trackId: string, event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      
+      const track = tracks.find(t => t.id === trackId);
+      if (!track || !track.currentArtistInput.trim()) return;
+      
+      const newArtist = track.currentArtistInput.trim();
+      
+      // 重複チェック
+      if (track.artists.includes(newArtist)) {
+        console.log('Artist already exists');
+        return;
+      }
+      
+      // アーティストを追加して入力フィールドをクリア
+      setTracks(tracks.map(t => 
+        t.id === trackId 
+          ? { 
+              ...t, 
+              artists: [...t.artists, newArtist],
+              currentArtistInput: ''
+            }
+          : t
+      ));
+      console.log(`Added artist: ${newArtist}`);
+    }
+  };
+
+  // タグ入力のエンターキーハンドラー
+  const handleTagKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      
+      if (!albumData.currentTagInput.trim()) return;
+      
+      const newTag = albumData.currentTagInput.trim();
+      
+      // 重複チェック
+      if (albumData.tags.includes(newTag)) {
+        console.log('Tag already exists');
+        return;
+      }
+      
+      // タグを追加して入力フィールドをクリア
+      setAlbumData({
+        ...albumData,
+        tags: [...albumData.tags, newTag],
+        currentTagInput: ''
+      });
+      console.log(`Added tag: ${newTag}`);
+    }
+  };
+
   const handleTrackChange = (trackId: string, field: keyof Track, value: string | boolean | string[]) => {
     setTracks(tracks.map(track => 
       track.id === trackId ? { ...track, [field]: value } : track
@@ -1005,7 +1060,6 @@ ${dirPath}
 
           <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-600 font-medium">タグ</label>
-            <span class="text-xs text-gray-500">カンマで区切り</span>
             
             {/* タグ入力フィールド（チップ内蔵） */}
             <div class="min-h-[2rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
@@ -1034,7 +1088,8 @@ ${dirPath}
                 type="text"
                 value={albumData.currentTagInput}
                 onInput={(e) => handleTagInput(e.currentTarget.value)}
-                placeholder={albumData.tags.length === 0 ? "タグをカンマで区切って入力" : ""}
+                onKeyDown={(e) => handleTagKeyDown(e)}
+                placeholder={albumData.tags.length === 0 ? "タグをカンマまたはエンターで区切って入力" : ""}
                 class="flex-1 min-w-[100px] outline-none bg-transparent text-xs"
               />
             </div>
@@ -1196,7 +1251,8 @@ ${dirPath}
                           value={track.currentArtistInput}
                           onInput={(e) => handleArtistInput(track.id, e.currentTarget.value)}
                           onPaste={(e) => handleArtistPaste(track.id, e)}
-                          placeholder={track.artists.length === 0 ? "アーティストをカンマで区切って入力" : ""}
+                          onKeyDown={(e) => handleArtistKeyDown(track.id, e)}
+                          placeholder={track.artists.length === 0 ? "アーティストをカンマまたはエンターで区切って入力" : ""}
                           class="flex-1 min-w-[80px] outline-none bg-transparent text-xs"
                         />
                       </div>
@@ -1211,8 +1267,6 @@ ${dirPath}
                           📋 コピー
                         </button>
                       )}
-                      
-                      <span class="text-gray-500 text-xs whitespace-nowrap">カンマで区切り</span>
                     </div>
                   </td>
                 </tr>
