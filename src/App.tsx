@@ -287,7 +287,7 @@ function App() {
             diskNumber: normalizeNumberString(metadata.disk_number || '1'),
             trackNumber: normalizeNumberString(metadata.track_number || '1'),
             title: metadata.title || getFileNameWithoutExtension(result.file_path),
-            artists: metadata.artist ? [metadata.artist] : [],
+            artists: metadata.artist ? metadata.artist.split(';').map(a => a.trim()).filter(a => a.length > 0) : [],
             currentArtistInput: '',
             filePath: result.file_path
           };
