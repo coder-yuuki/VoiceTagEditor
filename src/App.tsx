@@ -1095,9 +1095,9 @@ ${dirPath}
             </div>
           </div>
 
-          <button class="px-3 py-1.5 border border-blue-500 rounded bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors">
+          {/* <button class="px-3 py-1.5 border border-blue-500 rounded bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors">
             DLSiteから取得
-          </button>
+          </button> */}
         </div>
       </div>
 
