@@ -292,16 +292,22 @@ async fn extract_metadata_internal(file_path: &str) -> Result<AudioMetadata, Str
     };
 
     // Extract metadata from tags
-    if let Some(tags) = tags {
-        metadata.title = get_tag_value(tags, &["title", "Title", "TITLE"]);
-        metadata.artist = get_tag_value(tags, &["artist", "Artist", "ARTIST"]);
-        metadata.album_artist = get_tag_value(tags, &["album_artist", "AlbumArtist", "ALBUMARTIST", "albumartist"]);
+    // OGGファイルの場合、タグがstreamsにある可能性があるので、audio_streamからも取得を試みる
+    let stream_tags = audio_stream.and_then(|stream| stream.get("tags"));
+    
+    // format.tagsを優先し、なければstream.tagsを使用
+    let tags_to_use = tags.or(stream_tags);
+    
+    if let Some(tags) = tags_to_use {
+        metadata.title = get_tag_value(tags, &["title", "Title", "TITLE", "TRACKTITLE"]);
+        metadata.artist = get_tag_value(tags, &["artist", "Artist", "ARTIST", "PERFORMER"]);
+        metadata.album_artist = get_tag_value(tags, &["album_artist", "AlbumArtist", "ALBUMARTIST", "albumartist", "ALBUM_ARTIST"]);
         metadata.album = get_tag_value(tags, &["album", "Album", "ALBUM"]);
-        metadata.track_number = get_tag_value(tags, &["track", "Track", "TRACK", "TRACKNUMBER"]);
-        metadata.disk_number = get_tag_value(tags, &["disc", "Disc", "DISC", "DISCNUMBER", "disk", "Disk", "DISK"]);
+        metadata.track_number = get_tag_value(tags, &["track", "Track", "TRACK", "TRACKNUMBER", "tracknumber"]);
+        metadata.disk_number = get_tag_value(tags, &["disc", "Disc", "DISC", "DISCNUMBER", "disk", "Disk", "DISK", "discnumber"]);
         metadata.date = get_tag_value(tags, &["date", "Date", "DATE", "year", "Year", "YEAR"]);
         metadata.genre = get_tag_value(tags, &["genre", "Genre", "GENRE"]);
-        metadata.comment = get_tag_value(tags, &["comment", "Comment", "COMMENT"]);
+        metadata.comment = get_tag_value(tags, &["comment", "Comment", "COMMENT", "DESCRIPTION"]);
     }
 
     // Extract duration
