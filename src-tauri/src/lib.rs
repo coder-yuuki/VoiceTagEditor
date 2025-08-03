@@ -574,12 +574,23 @@ async fn convert_single_file(
                 "-disposition:v:0".to_string(), "attached_pic".to_string(),
             ]);
         } else {
-            ffmpeg_args.extend(vec![
-                "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
-                "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
-                "-c:v".to_string(), "copy".to_string(),
-                "-disposition:v:0".to_string(), "attached_pic".to_string(),
-            ]);
+            // FLAC形式の場合は特別なメタデータ設定
+            if output_settings.format == "FLAC" {
+                ffmpeg_args.extend(vec![
+                    "-map".to_string(), "0".to_string(),    // 元ファイルの全ストリーム
+                    "-map".to_string(), "1".to_string(),    // 外部アルバムアート
+                    "-c".to_string(), "copy".to_string(),   // 全ストリームをコピー
+                    "-metadata:s:v".to_string(), "title=Cover".to_string(),
+                    "-metadata:s:v".to_string(), "comment=Front cover".to_string(),
+                ]);
+            } else {
+                ffmpeg_args.extend(vec![
+                    "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
+                    "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
+                    "-c:v".to_string(), "copy".to_string(),
+                    "-disposition:v:0".to_string(), "attached_pic".to_string(),
+                ]);
+            }
         }
     } else {
         // アルバムアートがない場合は音声のみ
@@ -694,6 +705,8 @@ async fn convert_single_file(
         let error_msg = String::from_utf8_lossy(&output.stderr);
         return Err(format!("ファイル変換に失敗しました: {}", error_msg));
     }
+    
+
     
     Ok(output_path.to_string_lossy().to_string())
 }
