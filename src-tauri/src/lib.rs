@@ -564,11 +564,27 @@ async fn convert_single_file(
     
     // マッピング設定
     if has_artwork {
+        // M4A/AACの場合、PNGアルバムアートをJPEGに変換
+        if output_settings.format == "AAC" || output_settings.format == "M4A" {
+            ffmpeg_args.extend(vec![
+                "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
+                "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
+                "-c:a".to_string(), "aac".to_string(),  // オーディオコーデック
+                "-c:v".to_string(), "mjpeg".to_string(), // アルバムアートをJPEGに変換
+                "-disposition:v:0".to_string(), "attached_pic".to_string(),
+            ]);
+        } else {
+            ffmpeg_args.extend(vec![
+                "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
+                "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
+                "-c:v".to_string(), "copy".to_string(),
+                "-disposition:v:0".to_string(), "attached_pic".to_string(),
+            ]);
+        }
+    } else {
+        // アルバムアートがない場合は音声のみ
         ffmpeg_args.extend(vec![
-            "-map".to_string(), "0".to_string(),  // 音声ストリーム
-            "-map".to_string(), "1".to_string(),  // アルバムアート
-            "-c:v".to_string(), "copy".to_string(),
-            "-disposition:v:0".to_string(), "attached_pic".to_string(),
+            "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
         ]);
     }
     
@@ -647,9 +663,8 @@ async fn convert_single_file(
             }
         },
         "AAC" => {
-            // AACの場合、M4Aコンテナを使用
+            // AACの場合、M4Aコンテナを使用（オーディオコーデックは既にマッピング設定で指定済み）
             ffmpeg_args.extend(vec![
-                "-c:a".to_string(), "aac".to_string(),
                 "-f".to_string(), "mp4".to_string(),  // MP4コンテナを強制
             ]);
             match output_settings.quality.as_str() {
