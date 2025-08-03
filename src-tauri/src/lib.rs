@@ -490,60 +490,7 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
-// METADATA_BLOCK_PICTUREフォーマットでアルバムアートをエンコード（FLAC/OGG用）
-fn create_metadata_block_picture(image_path: &str) -> Result<String, String> {
-    use std::io::Read;
-    
-    // 画像ファイルを読み込み
-    let mut file = std::fs::File::open(image_path)
-        .map_err(|e| format!("画像ファイルの読み込みに失敗: {}", e))?;
-    
-    let mut image_data = Vec::new();
-    file.read_to_end(&mut image_data)
-        .map_err(|e| format!("画像データの読み込みに失敗: {}", e))?;
-    
-    // MIMEタイプを判定
-    let mime_type = if image_path.to_lowercase().ends_with(".png") {
-        "image/png"
-    } else if image_path.to_lowercase().ends_with(".jpg") || image_path.to_lowercase().ends_with(".jpeg") {
-        "image/jpeg"
-    } else {
-        "image/jpeg" // デフォルト
-    };
-    
-    // METADATA_BLOCK_PICTURE構造を構築
-    let mut block_data = Vec::new();
-    
-    // Picture type (3 = Cover (front))
-    block_data.extend_from_slice(&3u32.to_be_bytes());
-    
-    // MIME type length and string
-    let mime_bytes = mime_type.as_bytes();
-    block_data.extend_from_slice(&(mime_bytes.len() as u32).to_be_bytes());
-    block_data.extend_from_slice(mime_bytes);
-    
-    // Description (空)
-    block_data.extend_from_slice(&0u32.to_be_bytes());
-    
-    // Width (0 = 不明)
-    block_data.extend_from_slice(&0u32.to_be_bytes());
-    
-    // Height (0 = 不明)
-    block_data.extend_from_slice(&0u32.to_be_bytes());
-    
-    // Color depth (0 = 不明)
-    block_data.extend_from_slice(&0u32.to_be_bytes());
-    
-    // Number of colors (0 = 不明)
-    block_data.extend_from_slice(&0u32.to_be_bytes());
-    
-    // Picture data length and data
-    block_data.extend_from_slice(&(image_data.len() as u32).to_be_bytes());
-    block_data.extend_from_slice(&image_data);
-    
-    // Base64エンコード
-    Ok(BASE64_STANDARD.encode(&block_data))
-}
+
 
 async fn convert_single_file(
     app_handle: &AppHandle,
@@ -556,12 +503,7 @@ async fn convert_single_file(
     let source_path = &track.source_path;
     
     // 出力ファイル名を生成
-    // AACの場合はm4a拡張子を使用
-    let file_extension = if output_settings.format == "AAC" {
-        "m4a"
-    } else {
-        &output_settings.format.to_lowercase()
-    };
+    let file_extension = "mp3";
     
     let output_filename = format!(
         "{:02}-{:02} {}.{}",
@@ -607,48 +549,44 @@ async fn convert_single_file(
     ];
     
     // アルバムアートを追加（入力ファイルとして）
-    let has_artwork = album_data.album_artwork_path.is_some() || album_data.album_artwork_cache_path.is_some();
-    if let Some(artwork_path) = &album_data.album_artwork_path {
-        ffmpeg_args.extend(vec![
-            "-i".to_string(),
-            artwork_path.clone(),
-        ]);
-    } else if let Some(cache_path) = &album_data.album_artwork_cache_path {
-        ffmpeg_args.extend(vec![
-            "-i".to_string(),
-            cache_path.clone(),
-        ]);
+    // 空文字列を除外してアルバムアートの有無を判定
+    let has_external_artwork = album_data.album_artwork_path.as_ref()
+        .map(|p| !p.trim().is_empty())
+        .unwrap_or(false)
+        || album_data.album_artwork_cache_path.as_ref()
+        .map(|p| !p.trim().is_empty())
+        .unwrap_or(false);
+    
+    if has_external_artwork {
+        if let Some(artwork_path) = &album_data.album_artwork_path {
+            if !artwork_path.trim().is_empty() {
+                ffmpeg_args.extend(vec![
+                    "-i".to_string(),
+                    artwork_path.clone(),
+                ]);
+            }
+        } else if let Some(cache_path) = &album_data.album_artwork_cache_path {
+            if !cache_path.trim().is_empty() {
+                ffmpeg_args.extend(vec![
+                    "-i".to_string(),
+                    cache_path.clone(),
+                ]);
+            }
+        }
     }
     
     // 上書き許可
     ffmpeg_args.push("-y".to_string());
     
-    // マッピング設定
-    if has_artwork {
-        // M4A/AACの場合、PNGアルバムアートをJPEGに変換
-        if output_settings.format == "AAC" || output_settings.format == "M4A" {
-            ffmpeg_args.extend(vec![
-                "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
-                "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
-                "-c:a".to_string(), "aac".to_string(),  // オーディオコーデック
-                "-c:v".to_string(), "mjpeg".to_string(), // アルバムアートをJPEGに変換
-                "-disposition:v:0".to_string(), "attached_pic".to_string(),
-            ]);
-        } else {
-            // FLAC/OGG形式は音声のみマッピング（METADATA_BLOCK_PICTUREで後から埋め込み）
-            if output_settings.format == "FLAC" || output_settings.format == "OGG" {
-                ffmpeg_args.extend(vec![
-                    "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
-                ]);
-            } else {
-                ffmpeg_args.extend(vec![
-                    "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
-                    "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
-                    "-c:v".to_string(), "copy".to_string(),
-                    "-disposition:v:0".to_string(), "attached_pic".to_string(),
-                ]);
-            }
-        }
+    // マッピング設定（MP3専用）
+    if has_external_artwork {
+        // 音声 + 外部アルバムアート
+        ffmpeg_args.extend(vec![
+            "-map".to_string(), "0:a".to_string(),  // 音声ストリームのみ
+            "-map".to_string(), "1:0".to_string(),  // 外部アルバムアート
+            "-c:v".to_string(), "copy".to_string(),
+            "-disposition:v:0".to_string(), "attached_pic".to_string(),
+        ]);
     } else {
         // アルバムアートがない場合は音声のみ
         ffmpeg_args.extend(vec![
@@ -659,7 +597,6 @@ async fn convert_single_file(
     // メタデータを設定
     ffmpeg_args.extend(vec![
         "-metadata".to_string(), format!("title={}", track.title),
-        "-metadata".to_string(), format!("artist={}", track.artists.join(", ")),
         "-metadata".to_string(), format!("album={}", album_data.album_title),
         "-metadata".to_string(), format!("albumartist={}", album_data.album_artist),
         "-metadata".to_string(), format!("track={}", track.track_number),
@@ -668,92 +605,28 @@ async fn convert_single_file(
         "-metadata".to_string(), format!("genre={}", album_data.tags.join(", ")),
     ]);
     
-    // FLAC/OGG形式の場合、METADATA_BLOCK_PICTURE形式でアルバムアートを埋め込み
-    if has_artwork && (output_settings.format == "FLAC" || output_settings.format == "OGG") {
-        let artwork_path = album_data.album_artwork_path.as_ref()
-            .or(album_data.album_artwork_cache_path.as_ref());
-        
-        if let Some(art_path) = artwork_path {
-            match create_metadata_block_picture(art_path) {
-                Ok(block_picture) => {
-                    ffmpeg_args.extend(vec![
-                        "-metadata:s:a:0".to_string(),
-                        format!("METADATA_BLOCK_PICTURE={}", block_picture),
-                    ]);
-                },
-                Err(e) => {
-                    eprintln!("METADATA_BLOCK_PICTUREの作成に失敗: {}", e);
-                }
-            }
-        }
+    // アーティストを個別に追加
+    for artist in &track.artists {
+        ffmpeg_args.extend(vec![
+            "-metadata".to_string(), format!("artist={}", artist),
+        ]);
     }
     
-    // フォーマット別のエンコード設定
-    match output_settings.format.as_str() {
-        "MP3" => {
-            ffmpeg_args.extend(vec![
-                "-c:a".to_string(), "libmp3lame".to_string(),
-            ]);
-            match output_settings.quality.as_str() {
-                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
-                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
-                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
-                "V0" => ffmpeg_args.extend(vec!["-q:a".to_string(), "0".to_string()]),
-                "V2" => ffmpeg_args.extend(vec!["-q:a".to_string(), "2".to_string()]),
-                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-            }
-        },
-        "M4A" => {
-            ffmpeg_args.extend(vec![
-                "-c:a".to_string(), "aac".to_string(),
-            ]);
-            match output_settings.quality.as_str() {
-                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
-                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
-                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
-                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-            }
-        },
-        "FLAC" => {
-            ffmpeg_args.extend(vec![
-                "-c:a".to_string(), "flac".to_string(),
-            ]);
-            match output_settings.quality.as_str() {
-                "0" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "0".to_string()]),
-                "5" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "5".to_string()]),
-                "8" => ffmpeg_args.extend(vec!["-compression_level".to_string(), "8".to_string()]),
-                _ => ffmpeg_args.extend(vec!["-compression_level".to_string(), "5".to_string()]),
-            }
-        },
-        "OGG" => {
-            ffmpeg_args.extend(vec![
-                "-c:a".to_string(), "libvorbis".to_string(),
-            ]);
-            match output_settings.quality.as_str() {
-                "q10" => ffmpeg_args.extend(vec!["-q:a".to_string(), "10".to_string()]),
-                "q6" => ffmpeg_args.extend(vec!["-q:a".to_string(), "6".to_string()]),
-                "q3" => ffmpeg_args.extend(vec!["-q:a".to_string(), "3".to_string()]),
-                _ => ffmpeg_args.extend(vec!["-q:a".to_string(), "6".to_string()]),
-            }
-        },
-        "AAC" => {
-            // AACの場合、M4Aコンテナを使用（オーディオコーデックは既にマッピング設定で指定済み）
-            ffmpeg_args.extend(vec![
-                "-f".to_string(), "mp4".to_string(),  // MP4コンテナを強制
-            ]);
-            match output_settings.quality.as_str() {
-                "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
-                "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
-                "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-                "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
-                _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
-            }
-        },
-        _ => {
-            return Err(format!("サポートされていないフォーマットです: {}", output_settings.format));
-        }
+
+    
+    // MP3エンコード設定
+    ffmpeg_args.extend(vec![
+        "-c:a".to_string(), "libmp3lame".to_string(),
+    ]);
+    
+    match output_settings.quality.as_str() {
+        "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
+        "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
+        "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
+        "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
+        "V0" => ffmpeg_args.extend(vec!["-q:a".to_string(), "0".to_string()]),
+        "V2" => ffmpeg_args.extend(vec!["-q:a".to_string(), "2".to_string()]),
+        _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
     }
     
     // 出力ファイルパスを追加
