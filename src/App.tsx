@@ -67,7 +67,7 @@ interface AlbumData {
 interface ExportSettings {
   outputPath: string;
   overwriteMode: 'overwrite' | 'rename'; // 上書き or 別名
-  format: 'MP3' | 'M4A' | 'FLAC' | 'OGG' | 'OPUS' | 'AAC';
+  format: 'MP3' | 'M4A' | 'FLAC' | 'OGG' | 'AAC';
   quality: 'highest' | 'high' | 'medium' | 'low';
 }
 
@@ -122,7 +122,6 @@ function App() {
           { value: 'low', label: '低 (16bit/44.1kHz)' }
         ];
       case 'OGG':
-      case 'OPUS':
         return [
           { value: 'highest', label: '最高 (320kbps)' },
           { value: 'high', label: '高 (192kbps)' },
@@ -176,7 +175,7 @@ function App() {
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
-    const audioExtensions = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.opus', '.aac', '.wma'];
+    const audioExtensions = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.aac', '.wma'];
     const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
     
     if (imageExtensions.includes(fileExtension)) {
@@ -757,14 +756,6 @@ ${dirPath}
               case 'low': return 'q3';
               default: return 'q6';
             }
-          case 'OPUS':
-            switch (quality) {
-              case 'highest': return '320';
-              case 'high': return '192';
-              case 'medium': return '128';
-              case 'low': return '96';
-              default: return '128';
-            }
           default:
             return '192';
         }
@@ -1041,7 +1032,7 @@ ${dirPath}
                 <div class="text-sm">
                   音声ファイルまたはフォルダをここにドロップしてください<br />
                   <span class="text-xs text-gray-400">
-                    サポートファイル: MP3, M4A, FLAC, OGG, WAV, OPUS, AAC, WMA<br />
+                    サポートファイル: MP3, M4A, FLAC, OGG, WAV, AAC, WMA<br />
                     フォルダをドロップすると、サブフォルダも含めて音声ファイルを自動検索します
                   </span>
                 </div>
@@ -1198,7 +1189,6 @@ ${dirPath}
                 <option value="M4A">M4A</option>
                 <option value="FLAC">FLAC</option>
                 <option value="OGG">OGG</option>
-                <option value="OPUS">OPUS</option>
                 <option value="AAC">AAC</option>
               </select>
             </div>
