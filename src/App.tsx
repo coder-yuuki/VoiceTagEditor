@@ -610,6 +610,89 @@ ${dirPath}
     handleTrackChange(trackId, 'artists', updatedArtists);
   };
 
+  // クリップボードにコピー
+  const copyToClipboard = async (text: string, source: string = '') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      console.log(`Copied to clipboard: ${text} (from ${source})`);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      // フォールバック: 古いブラウザ向け
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        console.log(`Copied to clipboard (fallback): ${text} (from ${source})`);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+      }
+    }
+  };
+
+  // 単一アーティストをコピー
+  const copyArtist = (artist: string) => {
+    copyToClipboard(artist, 'single artist');
+  };
+
+  // 全アーティストを一括コピー（セミコロン区切り）
+  const copyAllArtists = (artists: string[]) => {
+    const artistsText = artists.join('; ');
+    copyToClipboard(artistsText, 'all artists');
+  };
+
+  // ペーストイベントハンドラー（複数アーティスト対応）
+  const handleArtistPaste = (trackId: string, event: ClipboardEvent) => {
+    event.preventDefault();
+    
+    const pastedText = event.clipboardData?.getData('text') || '';
+    if (!pastedText.trim()) return;
+    
+    // セミコロンとカンマの両方で分割（全角も対応）
+    const separatorRegex = /[;；,，]/;
+    let newArtists: string[] = [];
+    
+    if (separatorRegex.test(pastedText)) {
+      // 区切り文字がある場合は分割
+      newArtists = pastedText
+        .split(separatorRegex)
+        .map(artist => artist.trim())
+        .filter(artist => artist.length > 0);
+    } else {
+      // 区切り文字がない場合は単一アーティストとして扱う
+      const trimmed = pastedText.trim();
+      if (trimmed) {
+        newArtists = [trimmed];
+      }
+    }
+    
+    if (newArtists.length > 0) {
+      const track = tracks.find(t => t.id === trackId);
+      if (track) {
+        // 重複を除去して追加
+        const existingArtists = new Set(track.artists);
+        const uniqueNewArtists = newArtists.filter(artist => !existingArtists.has(artist));
+        
+        if (uniqueNewArtists.length > 0) {
+          setTracks(tracks.map(t => 
+            t.id === trackId 
+              ? { 
+                  ...t, 
+                  artists: [...t.artists, ...uniqueNewArtists],
+                  currentArtistInput: '' // ペースト後は入力フィールドをクリア
+                }
+              : t
+          ));
+          console.log(`Pasted artists: ${uniqueNewArtists.join(', ')}`);
+        } else {
+          console.log('All pasted artists already exist');
+        }
+      }
+    }
+  };
+
   const handleTrackChange = (trackId: string, field: keyof Track, value: string | boolean | string[]) => {
     setTracks(tracks.map(track => 
       track.id === trackId ? { ...track, [field]: value } : track
@@ -1087,13 +1170,19 @@ ${dirPath}
                           return (
                             <div 
                               key={`${artist}-${index}`}
-                              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity group"
                               style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
+                              onClick={() => copyArtist(artist)}
+                              title={`クリックで「${artist}」をコピー`}
                             >
                               <span>{artist}</span>
                               <button
-                                onClick={() => removeArtistTag(track.id, artist)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeArtistTag(track.id, artist);
+                                }}
                                 class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
+                                title="削除"
                               >
                                 ×
                               </button>
@@ -1106,10 +1195,23 @@ ${dirPath}
                           type="text"
                           value={track.currentArtistInput}
                           onInput={(e) => handleArtistInput(track.id, e.currentTarget.value)}
+                          onPaste={(e) => handleArtistPaste(track.id, e)}
                           placeholder={track.artists.length === 0 ? "アーティストをカンマで区切って入力" : ""}
                           class="flex-1 min-w-[80px] outline-none bg-transparent text-xs"
                         />
                       </div>
+                      
+                      {/* 一括コピーボタン */}
+                      {track.artists.length > 0 && (
+                        <button
+                          onClick={() => copyAllArtists(track.artists)}
+                          class="px-2 py-1 border border-blue-300 rounded bg-blue-50 text-blue-600 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-1 font-medium"
+                          title={`全アーティストをコピー: ${track.artists.join('; ')}`}
+                        >
+                          📋 コピー
+                        </button>
+                      )}
+                      
                       <span class="text-gray-500 text-xs whitespace-nowrap">カンマで区切り</span>
                     </div>
                   </td>
