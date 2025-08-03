@@ -546,7 +546,18 @@ async fn convert_single_file(
         file_extension
     );
     
-    let mut output_path = Path::new(&output_settings.output_path).join(&output_filename);
+    // アルバムアーティスト/アルバムタイトルのディレクトリパスを構築
+    let album_dir = Path::new(&output_settings.output_path)
+        .join(sanitize_filename(&album_data.album_artist))
+        .join(sanitize_filename(&album_data.album_title));
+    
+    // ディレクトリが存在しない場合は作成
+    if !album_dir.exists() {
+        fs::create_dir_all(&album_dir)
+            .map_err(|e| format!("出力ディレクトリの作成に失敗しました: {}", e))?;
+    }
+    
+    let mut output_path = album_dir.join(&output_filename);
     
     // 同名ファイルの処理
     if output_path.exists() && output_settings.overwrite_mode == "rename" {
@@ -556,7 +567,7 @@ async fn convert_single_file(
         
         loop {
             let new_filename = format!("{}_{}.{}", stem, counter, extension);
-            output_path = Path::new(&output_settings.output_path).join(&new_filename);
+            output_path = album_dir.join(&new_filename);
             if !output_path.exists() {
                 break;
             }

@@ -1217,7 +1217,7 @@ ${dirPath}
                         e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
                       }}
                       class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500 resize-none overflow-hidden min-h-[1.5rem]"
-                      rows="1"
+                      rows={1}
                       style={{
                         height: 'auto',
                         minHeight: '1.5rem'
