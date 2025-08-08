@@ -1,102 +1,16 @@
-use base64::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::process::Stdio;
-use std::fs;
-use std::path::Path;
-use tauri::{AppHandle, Emitter};
-use tokio::process::Command;
+use tauri_plugin_fs::init as init_fs;
+use tauri_plugin_dialog::init as init_dialog;
+use tauri_plugin_opener::init as init_opener;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AudioMetadata {
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub album_artist: Option<String>,
-    pub album: Option<String>,
-    pub track_number: Option<String>,
-    pub disk_number: Option<String>,
-    pub date: Option<String>,
-    pub genre: Option<String>,
-    pub comment: Option<String>,
-    pub duration: Option<String>,
-    pub bitrate: Option<String>,
-    pub sample_rate: Option<String>,
-    pub codec: Option<String>,
-    pub album_art: Option<String>, // base64 encoded
-    pub tags: Option<Vec<String>>, // TXXXフレームから読み取ったタグ
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AudioFileResult {
-    pub file_path: String,
-    pub metadata: Option<AudioMetadata>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProgressEvent {
-    pub current: usize,
-    pub total: usize,
-    pub file_path: String,
-    pub status: String, // "processing" | "completed" | "error"
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertRequest {
-    pub tracks: Vec<ConvertTrack>,
-    pub album_data: ConvertAlbumData,
-    pub output_settings: ConvertOutputSettings,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertTrack {
-    pub source_path: String,
-    pub disk_number: String,
-    pub track_number: String,
-    pub title: String,
-    pub artists: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertAlbumData {
-    pub album_title: String,
-    pub album_artist: String,
-    pub release_date: String,
-    pub tags: Vec<String>,
-    pub album_artwork_path: Option<String>,
-    pub album_artwork_cache_path: Option<String>,
-    pub album_artwork: Option<String>, // base64
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertOutputSettings {
-    pub output_path: String,
-    pub format: String, // "MP3", "M4A", "FLAC", etc.
-    pub quality: String,
-    pub overwrite_mode: String, // "overwrite" | "rename"
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertProgress {
-    pub current: usize,
-    pub total: usize,
-    pub current_file: String,
-    pub status: String, // "processing" | "completed" | "error"
-    pub progress_percent: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertResult {
-    pub success: bool,
-    pub converted_files: Vec<String>,
-    pub failed_files: Vec<ConvertError>,
-    pub total_processed: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConvertError {
-    pub source_path: String,
-    pub error_message: String,
-}
+mod models;
+mod metadata;
+mod fs_scan;
+mod system_check;
+mod utils;
+mod processing;
+mod cache;
+mod convert;
+mod commands;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -104,156 +18,26 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-#[tauri::command]
-async fn check_ffmpeg() -> Result<bool, String> {
-    // Check for ffmpeg
-    let ffmpeg_result = which::which("ffmpeg");
-    if ffmpeg_result.is_err() {
-        return Ok(false);
-    }
-
-    // Check for ffprobe
-    let ffprobe_result = which::which("ffprobe");
-    if ffprobe_result.is_err() {
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-#[tauri::command]
-async fn scan_directory_for_audio_files(directory_path: String) -> Result<Vec<String>, String> {
-    use std::path::Path;
-
-    let path = Path::new(&directory_path);
-    if !path.exists() {
-        return Err("指定されたディレクトリが存在しません".to_string());
-    }
-
-    if !path.is_dir() {
-        return Err("指定されたパスはディレクトリではありません".to_string());
-    }
-
-    let supported_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "aac", "wma"];
-    let mut audio_files = Vec::new();
-
-    scan_directory_recursive(path, &supported_extensions, &mut audio_files)?;
-
-    // ファイルパスをソート
-    audio_files.sort();
-
-    Ok(audio_files)
-}
-
-fn scan_directory_recursive(
-    dir: &std::path::Path,
-    supported_extensions: &[&str],
-    audio_files: &mut Vec<String>,
-) -> Result<(), String> {
-    use std::fs;
-
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("ディレクトリの読み込みに失敗しました: {}", e))?;
-
-    for entry in entries {
-        let entry = entry
-            .map_err(|e| format!("ディレクトリエントリの処理に失敗しました: {}", e))?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            // サブディレクトリを再帰的に処理
-            scan_directory_recursive(&path, supported_extensions, audio_files)?;
-        } else if path.is_file() {
-            // ファイルの拡張子をチェック
-            if let Some(extension) = path.extension() {
-                if let Some(ext_str) = extension.to_str() {
-                    let ext_lower = ext_str.to_lowercase();
-                    if supported_extensions.contains(&ext_lower.as_str()) {
-                        if let Some(path_str) = path.to_str() {
-                            audio_files.push(path_str.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn extract_album_art(file_path: &str) -> Option<String> {
-    let output = Command::new("ffmpeg")
-        .args([
-            "-i", file_path,
-            "-an", // no audio
-            "-vcodec", "copy",
-            "-f", "image2pipe",
-            "-"
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(init_fs())
+        .plugin(init_dialog())
+        .plugin(init_opener())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            system_check::check_ffmpeg,
+            metadata::extract_metadata,
+            processing::process_audio_files,
+            fs_scan::scan_directory_for_audio_files,
+            cache::save_album_art_to_cache,
+            convert::convert_audio_files
         ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
-
-    match output {
-        Ok(output) => {
-            if output.status.success() && !output.stdout.is_empty() {
-                Some(base64::prelude::BASE64_STANDARD.encode(&output.stdout))
-            } else {
-                None
-            }
-        }
-        Err(_) => None,
-    }
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
-async fn parse_duration(duration_str: &str) -> Option<String> {
-    if let Ok(seconds) = duration_str.parse::<f64>() {
-        let total_seconds = seconds as u64;
-        let hours = total_seconds / 3600;
-        let minutes = (total_seconds % 3600) / 60;
-        let secs = total_seconds % 60;
-        
-        if hours > 0 {
-            Some(format!("{:02}:{:02}:{:02}", hours, minutes, secs))
-        } else {
-            Some(format!("{:02}:{:02}", minutes, secs))
-        }
-    } else {
-        None
-    }
-}
-
-async fn extract_metadata_internal(file_path: &str) -> Result<AudioMetadata, String> {
-    // Check if file exists and has supported extension
-    let supported_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "aac", "wma"];
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_lowercase());
-    
-    match extension {
-        Some(ext) if supported_extensions.contains(&ext.as_str()) => {},
-        _ => return Err("サポートされていないファイル形式です".to_string()),
-    }
-
-    // Use ffprobe to extract metadata
-    let output = Command::new("ffprobe")
-        .args([
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            file_path
-        ])
-        .output()
-        .await
-        .map_err(|_| "ffprobeの実行に失敗しました".to_string())?;
-
-    if !output.status.success() {
-        return Err("メタデータの抽出に失敗しました".to_string());
-    }
-
+/* LEGACY CODE DISABLED
     let output_str = String::from_utf8(output.stdout)
         .map_err(|_| "ffprobeの出力を解析できませんでした".to_string())?;
 
@@ -777,13 +561,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
-            check_ffmpeg,
-            extract_metadata,
-            process_audio_files,
-            scan_directory_for_audio_files,
-            save_album_art_to_cache,
-            convert_audio_files
+            commands::check_ffmpeg,
+            commands::extract_metadata,
+            commands::process_audio_files,
+            commands::scan_directory_for_audio_files,
+            commands::save_album_art_to_cache,
+            commands::convert_audio_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+*/
