@@ -56,18 +56,11 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
-      - name: Build and release via Tauri Action (signed if secrets provided)
+      - name: Build and release via Tauri Action (no Apple signing)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing & notarization (optional)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Use either Apple ID + App-specific password OR API key triple below
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # Omit API key and Windows signing when not used
+          # No Apple signing / notarization
         with:
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}

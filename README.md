@@ -101,11 +101,10 @@ pnpm tsc
 
 - 最新版は GitHub Releases から入手できます: https://github.com/iLickeyPro/VoiceTagEditor/releases/latest
 - macOSでの初回起動確認（公証・署名の検証）:
-  - DMGをマウントし、`voicetageditor.app` を `Applications` にコピー
-  - 以下でGatekeeper確認（OKなら `accepted`）
-    - `spctl -a -vv /Applications/voicetageditor.app`
-  - 署名の詳細確認（codesign署名者など）
-    - `codesign -dv --verbose=4 /Applications/voicetageditor.app 2>&1 | head -n 20`
+  - 署名・公証なしビルドの場合、初回はGatekeeperでブロックされることがあります。
+  - 開く手順（2通り）
+    - Finderで右クリック → 開く → ダイアログで「開く」
+    - もしくは隔離属性を外す: `xattr -dr com.apple.quarantine /Applications/voicetageditor.app`
 ```
 
 ## プロジェクト構造

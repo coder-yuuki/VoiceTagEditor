@@ -32,9 +32,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "macOS": {
-      "signingIdentity": "Developer ID Application: Yuki Noguchi (66XHCGAYEE)"
-    },
     "resources": [
       "../README.md",
       "../LICENSE",
