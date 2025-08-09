@@ -39,6 +39,9 @@ jobs:
           version: 9
           run_install: false
 
+      - name: Check pnpm
+        run: pnpm -v
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -55,7 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tauriScript: pnpm tauri
+          tauriScript: npm
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
