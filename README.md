@@ -79,7 +79,17 @@ pnpm tsc
 ## リリース
 
 - GitHub Actions の `Tauri Release` ワークフローは、`v*` 形式のタグを push すると実行されます。
-- 署名/公証を行う場合は、必要な秘密情報（証明書、Apple Developer 関連）を GitHub Secrets に登録し、ワークフローに反映してください。
+- 署名/公証を行う場合は、必要な秘密情報（証明書、Apple Developer 関連）を GitHub Secrets に登録します。
+  - macOS（任意だが推奨）
+    - `APPLE_CERTIFICATE`: Developer ID Application の `.p12` をBase64化した文字列
+    - `APPLE_CERTIFICATE_PASSWORD`: 証明書パスワード
+    - `APPLE_TEAM_ID`: チームID
+    - 公証はいずれかを使用
+      - Apple ID: `APPLE_ID`, `APPLE_PASSWORD`（App-specific password）
+      - App Store Connect API Key: `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`
+  - Windows（任意）
+    - `WINDOWS_CERTIFICATE`: コードサイン用 `.pfx` をBase64化
+    - `WINDOWS_CERTIFICATE_PASSWORD`: PFXパスワード
 
 ## ライセンス
 
