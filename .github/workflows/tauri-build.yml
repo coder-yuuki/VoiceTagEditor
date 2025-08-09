@@ -58,14 +58,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tauriScript: npm
+          tauriScript: pnpm tauri
+
+      - name: Debug list target dir
+        if: always()
+        run: |
+          echo "Listing src-tauri/target after build:" && ls -R src-tauri/target || true
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
           name: bundles-${{ matrix.os }}
           path: |
-            src-tauri/target/release/bundle/**/*
+            src-tauri/target/**/bundle/**/*
           if-no-files-found: error
           retention-days: 7
 
