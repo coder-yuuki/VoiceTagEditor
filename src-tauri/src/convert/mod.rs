@@ -5,6 +5,9 @@ use tokio::process::Command;
 use futures::{stream, StreamExt};
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 mod mp3;
 mod flac;
 mod opus;
@@ -159,7 +162,13 @@ async fn convert_single_file(
 
     ffmpeg_args.push(output_path.to_string_lossy().to_string());
 
-    let output = Command::new("ffmpeg")
+    let mut cmd = Command::new("ffmpeg");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
         .args(&ffmpeg_args)
         .output()
         .await

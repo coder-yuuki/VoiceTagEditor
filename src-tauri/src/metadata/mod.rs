@@ -3,6 +3,9 @@ use serde_json;
 use std::process::Stdio;
 use tokio::process::Command;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use crate::models::AudioMetadata;
 
 mod mp3;
@@ -42,7 +45,13 @@ pub(crate) async fn extract_metadata_internal(file_path: &str) -> Result<AudioMe
 }
 
 pub(super) async fn run_ffprobe(file_path: &str) -> Result<serde_json::Value, String> {
-    let output = Command::new("ffprobe")
+    let mut cmd = Command::new("ffprobe");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
         .args([
             "-v",
             "quiet",
@@ -109,7 +118,13 @@ pub(super) fn extract_txxx_tags(tags: &serde_json::Value) -> Option<Vec<String>>
 }
 
 pub(super) async fn extract_album_art(file_path: &str) -> Option<String> {
-    let output = Command::new("ffmpeg")
+    let mut cmd = Command::new("ffmpeg");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
         .args(["-i", file_path, "-an", "-vcodec", "copy", "-f", "image2pipe", "-"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
