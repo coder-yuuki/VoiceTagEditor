@@ -96,6 +96,16 @@ pnpm tsc
 このプロジェクトは MIT ライセンスで提供されます。詳細は `LICENSE` を参照してください。
 
 サードパーティのライセンスは `THIRD-PARTY-NOTICES.md` を参照してください。
+
+## ダウンロード
+
+- 最新版は GitHub Releases から入手できます: https://github.com/iLickeyPro/VoiceTagEditor/releases/latest
+- macOSでの初回起動確認（公証・署名の検証）:
+  - DMGをマウントし、`voicetageditor.app` を `Applications` にコピー
+  - 以下でGatekeeper確認（OKなら `accepted`）
+    - `spctl -a -vv /Applications/voicetageditor.app`
+  - 署名の詳細確認（codesign署名者など）
+    - `codesign -dv --verbose=4 /Applications/voicetageditor.app 2>&1 | head -n 20`
 ```
 
 ## プロジェクト構造
