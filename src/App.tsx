@@ -80,7 +80,7 @@ interface AlbumData {
 interface ExportSettings {
   outputPath: string;
   overwriteMode: 'overwrite' | 'rename'; // 上書き or 別名
-  format: 'MP3';
+  format: 'MP3' | 'FLAC';
   quality: 'highest' | 'high' | 'medium' | 'low';
 }
 
@@ -113,6 +113,7 @@ function App() {
   const getQualityOptions = (format: ExportSettings['format']) => {
     switch (format) {
       case 'MP3':
+      case 'FLAC':
       default:
         return [
           { value: 'highest', label: '最高' },
@@ -879,6 +880,15 @@ ${dirPath}
               case 'low': return '128';
               default: return '192';
             }
+          case 'FLAC':
+            // FLACは圧縮レベル(0〜12)。推奨: highest=8, high=6, medium=5, low=3
+            switch (quality) {
+              case 'highest': return '8';
+              case 'high': return '6';
+              case 'medium': return '5';
+              case 'low': return '3';
+              default: return '5';
+            }
           default:
             return '192';
         }
@@ -1350,6 +1360,7 @@ ${dirPath}
                 class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
               >
                 <option value="MP3">MP3</option>
+                <option value="FLAC">FLAC</option>
               </select>
             </div>
 
