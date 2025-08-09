@@ -136,10 +136,10 @@ async fn convert_single_file(
         "OPUS" => {
             opus::append_format_specific_args(
                 &mut ffmpeg_args,
-                /*artwork_input_added:*/ artwork_input_added,
                 track,
                 album_data,
                 output_settings,
+                artwork_input_path.as_deref(),
             );
         }
         _ => {
