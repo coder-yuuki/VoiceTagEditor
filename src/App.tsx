@@ -80,7 +80,7 @@ interface AlbumData {
 interface ExportSettings {
   outputPath: string;
   overwriteMode: 'overwrite' | 'rename'; // 上書き or 別名
-  format: 'MP3' | 'FLAC';
+  format: 'MP3' | 'FLAC' | 'OPUS';
   quality: 'highest' | 'high' | 'medium' | 'low';
 }
 
@@ -161,7 +161,7 @@ function App() {
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
-    const audioExtensions = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.aac', '.wma'];
+    const audioExtensions = ['.wav', '.mp3', '.flac', '.opus'];
     const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
     
     if (imageExtensions.includes(fileExtension)) {
@@ -252,6 +252,7 @@ function App() {
       let hasAlbumArt = false;
       let albumArtData = '';
       let allTags: string[] = [];
+      let hasAlbumInfo = false;
 
       for (const result of results) {
         if (result.error) {
@@ -283,6 +284,7 @@ function App() {
                 albumArtist: metadata.album_artist || prev.albumArtist,
                 releaseDate: metadata.date || prev.releaseDate
               }));
+              hasAlbumInfo = true;
             } catch (error) {
               console.error('アルバムアートキャッシュ保存エラー:', error);
               // キャッシュ保存に失敗してもアルバムアートは表示
@@ -293,7 +295,19 @@ function App() {
                 albumArtist: metadata.album_artist || prev.albumArtist,
                 releaseDate: metadata.date || prev.releaseDate
               }));
+              hasAlbumInfo = true;
             }
+          }
+
+          // アルバムアートが無い場合でも、最初の1回はアルバム情報を反映
+          if (!hasAlbumInfo && (metadata.album || metadata.album_artist || metadata.date)) {
+            setAlbumData(prev => ({
+              ...prev,
+              albumTitle: metadata.album || prev.albumTitle,
+              albumArtist: metadata.album_artist || prev.albumArtist,
+              releaseDate: metadata.date || prev.releaseDate
+            }));
+            hasAlbumInfo = true;
           }
           
           // タグを収集（重複を避けて追加）
@@ -889,6 +903,15 @@ ${dirPath}
               case 'low': return '3';
               default: return '5';
             }
+          case 'OPUS':
+            // OPUSはビットレート。推奨: highest=256, high=192, medium=160, low=96
+            switch (quality) {
+              case 'highest': return '256';
+              case 'high': return '192';
+              case 'medium': return '160';
+              case 'low': return '96';
+              default: return '160';
+            }
           default:
             return '192';
         }
@@ -1165,7 +1188,7 @@ ${dirPath}
                 <div class="text-sm">
                   音声ファイルまたはフォルダをここにドロップしてください<br />
                   <span class="text-xs text-gray-400">
-                    サポートファイル: MP3, M4A, FLAC, OGG, WAV, AAC, WMA<br />
+                      サポートファイル: WAV, MP3, FLAC, OPUS<br />
                     フォルダをドロップすると、サブフォルダも含めて音声ファイルを自動検索します
                   </span>
                 </div>
@@ -1361,6 +1384,7 @@ ${dirPath}
               >
                 <option value="MP3">MP3</option>
                 <option value="FLAC">FLAC</option>
+                <option value="OPUS">OPUS</option>
               </select>
             </div>
 

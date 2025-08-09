@@ -11,7 +11,7 @@ pub async fn scan_directory_for_audio_files(directory_path: String) -> Result<Ve
         return Err("指定されたパスはディレクトリではありません".to_string());
     }
 
-    let supported_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "aac", "wma"];
+    let supported_extensions = ["wav", "mp3", "flac", "opus"];
     let mut audio_files = Vec::new();
 
     scan_directory_recursive(path, &supported_extensions, &mut audio_files)?;
