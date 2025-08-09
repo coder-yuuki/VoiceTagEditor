@@ -35,6 +35,14 @@
 - **パッケージマネージャー**: pnpm
 - **対応OS**: Windows、macOS、Linux
 
+## 必要要件 / 注意事項
+
+- 本アプリは音声の変換・埋め込み処理で FFmpeg を使用します。FFmpeg は同梱していないため、各OSにインストールしてください。
+  - macOS (Homebrew): `brew install ffmpeg`
+  - Windows: winget / Chocolatey などでインストール
+  - Linux: ディストリビューションのパッケージからインストール
+- OPUS のカバーアートは METADATA_BLOCK_PICTURE で埋め込みます。再生ソフトによっては表示されない場合があります。
+
 ## 開発環境セットアップ
 
 ### 必要な環境
@@ -67,6 +75,17 @@ pnpm build
 
 # 型チェック
 pnpm tsc
+
+## リリース
+
+- GitHub Actions の `Tauri Release` ワークフローは、`v*` 形式のタグを push すると実行されます。
+- 署名/公証を行う場合は、必要な秘密情報（証明書、Apple Developer 関連）を GitHub Secrets に登録し、ワークフローに反映してください。
+
+## ライセンス
+
+このプロジェクトは MIT ライセンスで提供されます。詳細は `LICENSE` を参照してください。
+
+サードパーティのライセンスは `THIRD-PARTY-NOTICES.md` を参照してください。
 ```
 
 ## プロジェクト構造
