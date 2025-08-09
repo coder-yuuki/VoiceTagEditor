@@ -318,6 +318,18 @@ function App() {
               }
             }
           }
+          // ジャンルをタグとして取り込む（MP3/FLACは genre に入る場合が多い）
+          if (metadata.genre && metadata.genre.trim().length > 0) {
+            const genreParts = metadata.genre
+              .split(/[;,／、\/]/)
+              .map((t) => t.trim())
+              .filter((t) => t.length > 0);
+            for (const g of genreParts) {
+              if (!allTags.includes(g)) {
+                allTags.push(g);
+              }
+            }
+          }
 
           // トラック情報を作成
           const newTrack: Track = {
