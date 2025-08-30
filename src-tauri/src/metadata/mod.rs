@@ -10,10 +10,10 @@ use crate::models::AudioMetadata;
 
 mod mp3;
 mod flac;
-mod opus;
 mod wav;
+mod m4a;
 
-const SUPPORTED_EXTENSIONS: [&str; 4] = ["mp3", "flac", "opus", "wav"];
+const SUPPORTED_EXTENSIONS: [&str; 4] = ["mp3", "flac", "wav", "m4a"];
 
 #[tauri::command]
 pub async fn extract_metadata(file_path: String) -> Result<AudioMetadata, String> {
@@ -38,8 +38,8 @@ pub(crate) async fn extract_metadata_internal(file_path: &str) -> Result<AudioMe
     match ext.as_str() {
         "mp3" => mp3::extract(file_path).await,
         "flac" => flac::extract(file_path).await,
-        "opus" => opus::extract(file_path).await,
         "wav" => wav::extract(file_path).await,
+        "m4a" => m4a::extract(file_path).await,
         _ => Err("サポートされていないファイル形式です".to_string()),
     }
 }

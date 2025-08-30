@@ -161,7 +161,7 @@ function App() {
   // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
-    const audioExtensions = ['.wav', '.mp3', '.flac', '.opus'];
+    const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a'];
     const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
     
     if (imageExtensions.includes(fileExtension)) {
@@ -1191,7 +1191,7 @@ ${dirPath}
                 <div class="text-sm">
                   音声ファイルまたはフォルダをここにドロップしてください<br />
                   <span class="text-xs text-gray-400">
-                      サポートファイル: WAV, MP3, FLAC, OPUS<br />
+                      サポートファイル: WAV, MP3, FLAC, M4A<br />
                     フォルダをドロップすると、サブフォルダも含めて音声ファイルを自動検索します
                   </span>
                 </div>

@@ -12,7 +12,7 @@ pub async fn scan_directory_for_audio_files(directory_path: String) -> Result<Ve
         return Err("指定されたパスはディレクトリではありません".to_string());
     }
 
-    let supported_extensions = ["wav", "mp3", "flac", "opus"];
+    let supported_extensions = ["wav", "mp3", "flac", "m4a"];
 
     // WalkDir で高速・安全に再帰走査（シンボリックリンクを追わない）
     let mut audio_files: Vec<String> = WalkDir::new(path)
@@ -34,4 +34,3 @@ pub async fn scan_directory_for_audio_files(directory_path: String) -> Result<Ve
     audio_files.sort();
     Ok(audio_files)
 }
-
