@@ -13,7 +13,7 @@
   "allow": [{ 
     "path": [
       "$APPDATA/databases/*",
-      "$HOME/**/*.{png,jpg,jpeg}"
+      "$HOME/**/*.{png,jpg,jpeg,webp}"
     ]
   }]
 }

@@ -30,6 +30,7 @@ pub fn run() {
             metadata::extract_metadata,
             processing::process_audio_files,
             fs_scan::scan_directory_for_audio_files,
+            fs_scan::scan_directory_for_image_files,
             cache::save_album_art_to_cache,
             convert::convert_audio_files
         ])

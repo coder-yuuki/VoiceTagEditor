@@ -185,7 +185,7 @@ function App() {
   };
 
   // オーディオファイルを処理する関数
-  const processAudioFiles = useCallback(async (filePaths: string[]) => {
+  const processAudioFiles = useCallback(async (filePaths: string[], preferExternalArtwork: boolean = false) => {
     try {
       setIsProcessing(true);
       
@@ -217,8 +217,8 @@ function App() {
           console.log(`${skippedCount}個のファイルは既に読み込み済みのためスキップします`);
         }
 
-        // 非同期処理を開始（状態は後で更新）
-        processNewFiles(newFilePaths);
+        // 非同期処理を開始（状態は後で更新）。外部画像を優先するかフラグを渡す
+        processNewFiles(newFilePaths, preferExternalArtwork === true);
         
         return currentTracks; // 現時点では状態変更なし
       });
@@ -229,7 +229,7 @@ function App() {
   }, []);
 
   // 実際のファイル処理を行う関数
-  const processNewFiles = async (newFilePaths: string[]) => {
+  const processNewFiles = async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
     try {
       
       // FFmpegのチェック
@@ -263,8 +263,9 @@ function App() {
         if (result.metadata) {
           const metadata = result.metadata;
           
-          // アルバムアートを取得（最初のファイルからのみ）
-          if (!hasAlbumArt && metadata.album_art) {
+          // アルバムアートを取得（最初のファイルからのみ）。
+          // ただし、フォルダ/ドロップに画像候補が含まれている場合は埋め込みを使わない。
+          if (!hasExternalImageCandidate && !hasAlbumArt && metadata.album_art) {
             hasAlbumArt = true;
             albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
             
@@ -449,8 +450,9 @@ function App() {
             }
           }
 
-          // ディレクトリから音声ファイルを取得
+          // ディレクトリから音声/画像ファイルを取得
           let directoryAudioFiles: string[] = [];
+          let directoryImageFiles: string[] = [];
           if (directoryPaths.length > 0) {
             console.log('Processing directories:', directoryPaths);
             
@@ -461,6 +463,16 @@ function App() {
                 });
                 directoryAudioFiles.push(...files);
                 console.log(`Found ${files.length} audio files in ${dirPath}`);
+                // 画像もスキャン
+                try {
+                  const imgs = await invoke<string[]>('scan_directory_for_image_files', {
+                    directoryPath: dirPath
+                  });
+                  directoryImageFiles.push(...imgs);
+                  console.log(`Found ${imgs.length} image files in ${dirPath}`);
+                } catch (imgErr) {
+                  console.error(`Error scanning images in ${dirPath}:`, imgErr);
+                }
               } catch (error) {
                 console.error(`Error scanning directory ${dirPath}:`, error);
                 await confirm(`ディレクトリの処理中にエラーが発生しました:
@@ -476,29 +488,41 @@ ${dirPath}
 
           // すべての音声ファイルパスを結合
           const allAudioPaths = [...audioPaths, ...directoryAudioFiles];
+          // すべての画像ファイルパスを結合
+          const allImagePaths = [...imagePaths, ...directoryImageFiles];
 
           // サポートされていないファイルがある場合は警告
           if (unsupportedPaths.length > 0) {
             console.warn('サポートされていないファイル:', unsupportedPaths);
           }
 
-          // 画像ファイルの処理（最初の1つだけ）
-          if (imagePaths.length > 0) {
-            const filePath = imagePaths[0];
-            console.log('Processing image file:', filePath);
-            const artworkUrl = convertFileSrc(filePath);
-            setAlbumData(prev => ({
-              ...prev,
-              albumArtwork: artworkUrl,
-              albumArtworkPath: filePath
-            }));
-          }
-
-          // オーディオファイルの処理
+          // オーディオファイルの処理（先に処理する）。画像候補の有無を渡す
           if (allAudioPaths.length > 0) {
             console.log('Processing audio files:', allAudioPaths);
             console.log(`Total audio files found: ${allAudioPaths.length}`);
-            await processAudioFiles(allAudioPaths);
+            await processAudioFiles(allAudioPaths, allImagePaths.length > 0);
+          }
+
+          // 画像ファイルは最後に処理し、アルバムアートとして優先的に使用
+          if (allImagePaths.length > 0) {
+            // 優先度: ファイル名に 'cover' を含む > 'album' を含む > その他
+            const score = (p: string) => {
+              const name = getFileNameWithoutExtension(p).toLowerCase();
+              if (name.includes('cover')) return 0;
+              if (name.includes('album')) return 1;
+              return 2;
+            };
+            const sorted = [...allImagePaths].sort((a, b) => score(a) - score(b));
+            const bestImage = sorted[0];
+            console.log('Selected album artwork image:', bestImage);
+            const artworkUrl = convertFileSrc(bestImage);
+            setAlbumData(prev => ({
+              ...prev,
+              albumArtwork: artworkUrl,
+              albumArtworkPath: bestImage,
+              // メタデータからのキャッシュ画像よりフォルダ内画像を優先（キャッシュはクリア）
+              albumArtworkCachePath: undefined
+            }));
           }
 
           // 処理結果を表示
