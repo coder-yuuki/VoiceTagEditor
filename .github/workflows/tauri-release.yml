@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -63,10 +63,10 @@ jobs:
           # No Apple signing / notarization
         with:
           tauriScript: pnpm tauri
+          args: build
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseBody: 'Automated release for ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
-
 

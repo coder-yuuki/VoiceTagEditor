@@ -7,6 +7,7 @@ pub fn append_format_specific_args(
     album_data: &ConvertAlbumData,
     output_settings: &ConvertOutputSettings,
 ) {
+    // Map audio and optional cover art
     if artwork_input_added {
         ffmpeg_args.extend(vec![
             "-map".to_string(),
@@ -22,6 +23,7 @@ pub fn append_format_specific_args(
         ffmpeg_args.extend(vec!["-map".to_string(), "0:a".to_string()]);
     }
 
+    // Metadata (MP4/iTunes style)
     ffmpeg_args.extend(vec![
         "-metadata".to_string(),
         format!("title={}", track.title),
@@ -36,6 +38,7 @@ pub fn append_format_specific_args(
         "-metadata".to_string(),
         format!("date={}", album_data.release_date),
         "-metadata".to_string(),
+        // Join multi-value tags as semicolon
         format!("genre={}", album_data.tags.join(";")),
     ]);
 
@@ -46,27 +49,18 @@ pub fn append_format_specific_args(
         ]);
     }
 
-    if !album_data.tags.is_empty() {
-        ffmpeg_args.extend(vec![
-            "-metadata".to_string(),
-            format!("TXXX=TAG={}", album_data.tags.join(";")),
-        ]);
-    }
-
+    // Encoder
     ffmpeg_args.extend(vec![
         "-c:a".to_string(),
-        "libmp3lame".to_string(),
-        "-id3v2_version".to_string(),
-        "3".to_string(),
+        "aac".to_string(),
     ]);
 
+    // Bitrate mapping
     match output_settings.quality.as_str() {
         "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),
         "256" => ffmpeg_args.extend(vec!["-b:a".to_string(), "256k".to_string()]),
         "192" => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
         "128" => ffmpeg_args.extend(vec!["-b:a".to_string(), "128k".to_string()]),
-        "V0" => ffmpeg_args.extend(vec!["-q:a".to_string(), "0".to_string()]),
-        "V2" => ffmpeg_args.extend(vec!["-q:a".to_string(), "2".to_string()]),
         _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
     }
 }

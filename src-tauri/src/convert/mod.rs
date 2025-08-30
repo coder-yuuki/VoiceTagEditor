@@ -9,8 +9,7 @@ use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 mod mp3;
-mod flac;
-mod opus;
+mod m4a;
 
 use crate::models::{
     ConvertAlbumData, ConvertError, ConvertOutputSettings, ConvertProgress, ConvertRequest,
@@ -20,8 +19,7 @@ use crate::utils::sanitize_filename;
 
 fn resolve_output_extension(format: &str) -> &'static str {
     match format.to_ascii_uppercase().as_str() {
-        "FLAC" => "flac",
-        "OPUS" => "opus",
+        "M4A" => "m4a",
         _ => "mp3",
     }
 }
@@ -130,23 +128,13 @@ async fn convert_single_file(
     ffmpeg_args.push("-y".to_string());
 
     match output_settings.format.to_ascii_uppercase().as_str() {
-        "FLAC" => {
-            flac::append_format_specific_args(
+        "M4A" => {
+            m4a::append_format_specific_args(
                 &mut ffmpeg_args,
                 artwork_input_added,
                 track,
                 album_data,
                 output_settings,
-                artwork_input_path.as_deref(),
-            );
-        }
-        "OPUS" => {
-            opus::append_format_specific_args(
-                &mut ffmpeg_args,
-                track,
-                album_data,
-                output_settings,
-                artwork_input_path.as_deref(),
             );
         }
         _ => {
@@ -278,5 +266,4 @@ pub async fn convert_audio_files(
         total_processed: total,
     })
 }
-
 
