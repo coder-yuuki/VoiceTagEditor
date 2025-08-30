@@ -27,14 +27,14 @@ fn resolve_output_extension(format: &str) -> &'static str {
 fn resolve_artwork_input_path(album_data: &ConvertAlbumData) -> Option<String> {
     if let Some(artwork_path) = &album_data.album_artwork_path {
         let trimmed = artwork_path.trim();
-        if !trimmed.is_empty() && std::path::Path::new(trimmed).exists() {
+        if !trimmed.is_empty() && crate::path_utils::path_exists(trimmed) {
             return Some(trimmed.to_string());
         }
     }
 
     if let Some(cache_path) = &album_data.album_artwork_cache_path {
         let trimmed = cache_path.trim();
-        if !trimmed.is_empty() && std::path::Path::new(trimmed).exists() {
+        if !trimmed.is_empty() && crate::path_utils::path_exists(trimmed) {
             return Some(trimmed.to_string());
         }
     }
@@ -73,8 +73,8 @@ async fn convert_single_file(
         .join(sanitize_filename(&album_data.album_artist))
         .join(sanitize_filename(&album_data.album_title));
 
-    if !album_dir.exists() {
-        fs::create_dir_all(&album_dir)
+    if !crate::path_utils::path_exists(&album_dir) {
+        crate::path_utils::create_dir_all_extended(&album_dir)
             .map_err(|e| format!("出力ディレクトリの作成に失敗しました: {}", e))?;
     }
 
@@ -113,12 +113,15 @@ async fn convert_single_file(
     };
     let _ = app_handle.emit("convert-progress", &progress);
 
-    let mut ffmpeg_args: Vec<String> = vec!["-i".to_string(), source_path.clone()];
+    let mut ffmpeg_args: Vec<String> = vec![
+        "-i".to_string(),
+        crate::path_utils::prepare_cmd_arg(source_path),
+    ];
 
     let artwork_input_path = resolve_artwork_input_path(album_data);
     let artwork_input_added = if let Some(path) = &artwork_input_path {
         ffmpeg_args.push("-i".to_string());
-        ffmpeg_args.push(path.clone());
+        ffmpeg_args.push(crate::path_utils::prepare_cmd_arg(path));
         true
     } else {
         false
@@ -148,7 +151,7 @@ async fn convert_single_file(
         }
     }
 
-    ffmpeg_args.push(output_path.to_string_lossy().to_string());
+    ffmpeg_args.push(crate::path_utils::prepare_cmd_arg(&output_path.to_string_lossy()));
 
     let ffmpeg_path = crate::system_check::get_ffmpeg_path()
         .await
@@ -181,8 +184,8 @@ pub async fn convert_audio_files(
     let total = request.tracks.len();
 
     let output_dir = Path::new(&request.output_settings.output_path);
-    if !output_dir.exists() {
-        fs::create_dir_all(output_dir)
+    if !crate::path_utils::path_exists(output_dir) {
+        crate::path_utils::create_dir_all_extended(output_dir)
             .map_err(|e| format!("出力ディレクトリの作成に失敗しました: {}", e))?;
     }
 

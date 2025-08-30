@@ -42,7 +42,7 @@ pub async fn process_audio_files(
                 };
                 let _ = app_handle.emit("audio-processing-progress", &progress);
 
-                if !std::path::Path::new(&file_path).exists() {
+                if !crate::path_utils::path_exists(&file_path) {
                     return AudioFileResult {
                         file_path,
                         metadata: None,

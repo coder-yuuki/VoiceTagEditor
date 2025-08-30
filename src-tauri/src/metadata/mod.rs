@@ -17,7 +17,7 @@ const SUPPORTED_EXTENSIONS: [&str; 4] = ["mp3", "flac", "wav", "m4a"];
 
 #[tauri::command]
 pub async fn extract_metadata(file_path: String) -> Result<AudioMetadata, String> {
-    if !std::path::Path::new(&file_path).exists() {
+    if !crate::path_utils::path_exists(&file_path) {
         return Err("ファイルが見つかりません".to_string());
     }
 
@@ -62,7 +62,7 @@ pub(super) async fn run_ffprobe(file_path: &str) -> Result<serde_json::Value, St
             "json",
             "-show_format",
             "-show_streams",
-            file_path,
+            &crate::path_utils::prepare_cmd_arg(file_path),
         ])
         .output()
         .await
@@ -131,7 +131,7 @@ pub(super) async fn extract_album_art(file_path: &str) -> Option<String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let output = cmd
-        .args(["-i", file_path, "-an", "-vcodec", "copy", "-f", "image2pipe", "-"])
+        .args(["-i", &crate::path_utils::prepare_cmd_arg(file_path), "-an", "-vcodec", "copy", "-f", "image2pipe", "-"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()

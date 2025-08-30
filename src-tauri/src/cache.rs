@@ -20,7 +20,7 @@ pub async fn save_album_art_to_cache(
         .join("album_art");
 
     // キャッシュディレクトリを作成
-    fs::create_dir_all(&cache_dir)
+    crate::path_utils::create_dir_all_extended(&cache_dir)
         .map_err(|e| format!("キャッシュディレクトリの作成に失敗しました: {}", e))?;
 
     // ファイル名を生成（アルバム名とアーティスト名から）
@@ -38,7 +38,10 @@ pub async fn save_album_art_to_cache(
         .map_err(|e| format!("Base64デコードに失敗しました: {}", e))?;
 
     // ファイルに書き込み
-    fs::write(&file_path, image_data)
+    {
+        let ep = crate::path_utils::to_extended_length_path_if_needed(&file_path);
+        std::fs::write(&ep, image_data)
+    }
         .map_err(|e| format!("ファイルの書き込みに失敗しました: {}", e))?;
 
     // パスを文字列として返す

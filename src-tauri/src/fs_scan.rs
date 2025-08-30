@@ -4,7 +4,7 @@ use walkdir::WalkDir;
 #[tauri::command]
 pub async fn scan_directory_for_audio_files(directory_path: String) -> Result<Vec<String>, String> {
     let path = Path::new(&directory_path);
-    if !path.exists() {
+    if !crate::path_utils::path_exists(path) {
         return Err("指定されたディレクトリが存在しません".to_string());
     }
 

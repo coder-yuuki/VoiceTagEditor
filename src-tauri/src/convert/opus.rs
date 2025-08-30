@@ -48,8 +48,8 @@ pub fn append_format_specific_args(
 
     // METADATA_BLOCK_PICTURE を生成して埋め込む（base64）。
     if let Some(img_path) = artwork_input_path {
-        if !img_path.trim().is_empty() && Path::new(img_path).exists() {
-            if let Ok(image_bytes) = fs::read(img_path) {
+        if !img_path.trim().is_empty() && crate::path_utils::path_exists(img_path) {
+            if let Ok(image_bytes) = fs::read(crate::path_utils::to_extended_length_path_if_needed(Path::new(img_path))) {
                 // picture type = 3 (Cover front)
                 let mime_bytes: &[u8] = if img_path.to_ascii_lowercase().ends_with(".png") {
                     b"image/png"
@@ -111,5 +111,4 @@ pub fn append_format_specific_args(
         "on".to_string(),
     ]);
 }
-
 

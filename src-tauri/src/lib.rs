@@ -10,6 +10,7 @@ mod utils;
 mod processing;
 mod cache;
 mod convert;
+mod path_utils;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -35,4 +36,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
