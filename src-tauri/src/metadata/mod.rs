@@ -45,7 +45,10 @@ pub(crate) async fn extract_metadata_internal(file_path: &str) -> Result<AudioMe
 }
 
 pub(super) async fn run_ffprobe(file_path: &str) -> Result<serde_json::Value, String> {
-    let mut cmd = Command::new("ffprobe");
+    let ffprobe_path = crate::system_check::get_ffprobe_path()
+        .await
+        .unwrap_or_else(|| std::path::PathBuf::from("ffprobe"));
+    let mut cmd = Command::new(ffprobe_path);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -118,7 +121,10 @@ pub(super) fn extract_txxx_tags(tags: &serde_json::Value) -> Option<Vec<String>>
 }
 
 pub(super) async fn extract_album_art(file_path: &str) -> Option<String> {
-    let mut cmd = Command::new("ffmpeg");
+    let ffmpeg_path = crate::system_check::get_ffmpeg_path()
+        .await
+        .unwrap_or_else(|| std::path::PathBuf::from("ffmpeg"));
+    let mut cmd = Command::new(ffmpeg_path);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

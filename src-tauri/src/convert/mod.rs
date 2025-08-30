@@ -150,7 +150,10 @@ async fn convert_single_file(
 
     ffmpeg_args.push(output_path.to_string_lossy().to_string());
 
-    let mut cmd = Command::new("ffmpeg");
+    let ffmpeg_path = crate::system_check::get_ffmpeg_path()
+        .await
+        .unwrap_or_else(|| std::path::PathBuf::from("ffmpeg"));
+    let mut cmd = Command::new(ffmpeg_path);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -266,4 +269,3 @@ pub async fn convert_audio_files(
         total_processed: total,
     })
 }
-
