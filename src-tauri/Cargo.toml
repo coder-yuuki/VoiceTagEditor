@@ -1,6 +1,6 @@
 [package]
 name = "voicetageditor"
-version = "0.1.0"
+version = "0.8.0"
 description = "Desktop app to edit and convert audio tags (MP3/FLAC/WAV/M4A) with FFmpeg and Tauri."
 authors = ["Noguchi Yuuki"]
 edition = "2021"
