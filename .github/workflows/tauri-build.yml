@@ -61,7 +61,7 @@ jobs:
           # No Apple signing / notarization
         with:
           tauriScript: pnpm tauri
-          args: build
+          # args omitted; action defaults to 'build'
 
       - name: Debug list target dir
         if: always()
@@ -76,4 +76,3 @@ jobs:
             src-tauri/target/**/bundle/**/*
           if-no-files-found: error
           retention-days: 7
-

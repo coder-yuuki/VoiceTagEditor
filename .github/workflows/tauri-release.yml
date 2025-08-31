@@ -63,10 +63,9 @@ jobs:
           # No Apple signing / notarization
         with:
           tauriScript: pnpm tauri
-          args: build
+          # args omitted; action defaults to 'build'
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseBody: 'Automated release for ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
-
