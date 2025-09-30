@@ -97,6 +97,9 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
   const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
+  
+  // 完了数を追跡（並列処理でイベントが前後するため）
+  const [completedCount, setCompletedCount] = useState(0);
 
   const [tracks, setTracks] = useState<Track[]>([]);
 
@@ -231,6 +234,8 @@ function App() {
   // 実際のファイル処理を行う関数
   const processNewFiles = async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
     try {
+      // 完了数をリセット
+      setCompletedCount(0);
       
       // FFmpegのチェック
       const ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
@@ -386,7 +391,14 @@ function App() {
     const setupProgressListener = async () => {
       try {
         unlisten = await listen<ProgressEvent>('audio-processing-progress', (event) => {
-          setProcessingProgress(event.payload);
+          const progress = event.payload;
+          
+          // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
+          if (progress.status === 'completed' || progress.status === 'error') {
+            setCompletedCount(prev => Math.max(prev, progress.current));
+          }
+          
+          setProcessingProgress(progress);
         });
       } catch (error) {
         console.error('プログレスリスナーの設定に失敗:', error);
@@ -914,10 +926,18 @@ ${dirPath}
     console.log('=== 変換処理開始 ===');
     console.log('変換対象:', tracksToConvert.length, 'ファイル');
     
+    // 完了数をリセット
+    setCompletedCount(0);
+    
     // 進捗イベントリスナーを設定
     const unlistenProgress = await listen('convert-progress', (event: any) => {
       const progress = event.payload;
       console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
+      
+      // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
+      if (progress.status === 'completed' || progress.status === 'error') {
+        setCompletedCount(prev => Math.max(prev, progress.current));
+      }
       
       // ここで進捗表示UIを更新可能
       setConvertProgress({
@@ -1533,9 +1553,7 @@ ${dirPath}
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {convertProgress.status === 'processing' 
-                      ? `${convertProgress.current - 1} / ${convertProgress.total} ファイル処理済み`
-                      : `${convertProgress.current} / ${convertProgress.total} ファイル処理済み`}
+                    {completedCount} / {convertProgress.total} ファイル処理済み
                     <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
                   </div>
                   
@@ -1555,22 +1573,16 @@ ${dirPath}
                     <div 
                       class="bg-blue-600 h-4 rounded-full transition-all duration-300"
                       style={{ 
-                        width: `${processingProgress.status === 'processing'
-                          ? ((processingProgress.current - 1) / processingProgress.total) * 100
-                          : (processingProgress.current / processingProgress.total) * 100}%` 
+                        width: `${completedCount > 0 ? (completedCount / processingProgress.total) * 100 : 0}%` 
                       }}
                     ></div>
                   </div>
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {processingProgress.status === 'processing'
-                      ? `${processingProgress.current - 1} / ${processingProgress.total} ファイル処理済み`
-                      : `${processingProgress.current} / ${processingProgress.total} ファイル処理済み`}
+                    {completedCount} / {processingProgress.total} ファイル処理済み
                     <span class="ml-2 text-blue-600">
-                      ({Math.round(processingProgress.status === 'processing'
-                        ? ((processingProgress.current - 1) / processingProgress.total) * 100
-                        : (processingProgress.current / processingProgress.total) * 100)}%)
+                      ({completedCount > 0 ? Math.round((completedCount / processingProgress.total) * 100) : 0}%)
                     </span>
                   </div>
                   
