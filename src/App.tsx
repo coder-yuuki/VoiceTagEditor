@@ -1533,7 +1533,7 @@ ${dirPath}
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {convertProgress.current} / {convertProgress.total} ファイル
+                    {convertProgress.current - 1} / {convertProgress.total} ファイル処理済み
                     <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
                   </div>
                   
@@ -1554,15 +1554,15 @@ ${dirPath}
                   <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
                     <div 
                       class="bg-blue-600 h-4 rounded-full transition-all duration-300"
-                      style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                      style={{ width: `${((processingProgress.current - 1) / processingProgress.total) * 100}%` }}
                     ></div>
                   </div>
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {processingProgress.current} / {processingProgress.total} ファイル
+                    {processingProgress.current - 1} / {processingProgress.total} ファイル処理済み
                     <span class="ml-2 text-blue-600">
-                      ({Math.round((processingProgress.current / processingProgress.total) * 100)}%)
+                      ({Math.round(((processingProgress.current - 1) / processingProgress.total) * 100)}%)
                     </span>
                   </div>
                   
