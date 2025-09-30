@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 use futures::{stream, StreamExt};
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use serde::Deserialize;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -16,6 +17,28 @@ use crate::models::{
     ConvertResult, ConvertTrack,
 };
 use crate::utils::sanitize_filename;
+
+/// ffprobeの出力形式（必要な部分のみ）
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct FFProbeOutput {
+    streams: Option<Vec<FFProbeStream>>,
+    format: Option<FFProbeFormat>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct FFProbeStream {
+    codec_type: Option<String>,
+    codec_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct FFProbeFormat {
+    duration: Option<String>,
+    size: Option<String>,
+}
 
 fn resolve_output_extension(format: &str) -> &'static str {
     match format.to_ascii_uppercase().as_str() {
@@ -40,6 +63,90 @@ fn resolve_artwork_input_path(album_data: &ConvertAlbumData) -> Option<String> {
     }
 
     None
+}
+
+/// ffmpegで生成された出力ファイルが正常かを検証する
+async fn verify_output_file(output_path: &Path) -> Result<(), String> {
+    // 1. ファイルの存在チェック
+    if !output_path.exists() {
+        return Err("出力ファイルが存在しません".to_string());
+    }
+
+    // 2. ファイルサイズチェック（0バイトでないこと）
+    let metadata = fs::metadata(output_path)
+        .map_err(|e| format!("ファイル情報の取得に失敗しました: {}", e))?;
+    
+    let file_size = metadata.len();
+    if file_size == 0 {
+        return Err("出力ファイルのサイズが0バイトです".to_string());
+    }
+
+    // 最小サイズチェック（1KB未満は異常と判断）
+    if file_size < 1024 {
+        return Err(format!("出力ファイルのサイズが異常に小さいです（{}バイト）", file_size));
+    }
+
+    // 3. ffprobeで出力ファイルを検証
+    let ffprobe_path = crate::system_check::get_ffprobe_path()
+        .await
+        .unwrap_or_else(|| std::path::PathBuf::from("ffprobe"));
+
+    let mut cmd = Command::new(ffprobe_path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd
+        .args(&[
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_format",
+            &crate::path_utils::prepare_cmd_arg(&output_path.to_string_lossy()),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffprobeの実行に失敗しました: {}", e))?;
+
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobeによる検証に失敗しました: {}", error_msg));
+    }
+
+    // 4. JSON出力をパース
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let probe_result: FFProbeOutput = serde_json::from_str(&stdout)
+        .map_err(|e| format!("ffprobeの出力解析に失敗しました: {}", e))?;
+
+    // 5. オーディオストリームの存在確認
+    let has_audio_stream = probe_result
+        .streams
+        .as_ref()
+        .and_then(|streams| {
+            streams.iter().find(|s| {
+                s.codec_type.as_deref() == Some("audio")
+            })
+        })
+        .is_some();
+
+    if !has_audio_stream {
+        return Err("出力ファイルにオーディオストリームが含まれていません".to_string());
+    }
+
+    // 6. フォーマット情報の確認（durationが取得できるか）
+    if let Some(format) = &probe_result.format {
+        if let Some(duration_str) = &format.duration {
+            if let Ok(duration) = duration_str.parse::<f64>() {
+                if duration <= 0.0 {
+                    return Err("出力ファイルの再生時間が0秒です".to_string());
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn convert_single_file(
@@ -171,6 +278,13 @@ async fn convert_single_file(
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
         return Err(format!("ファイル変換に失敗しました: {}", error_msg));
+    }
+
+    // 出力ファイルの検証
+    if let Err(verification_error) = verify_output_file(&output_path).await {
+        // 検証に失敗した場合、不正なファイルを削除
+        let _ = fs::remove_file(&output_path);
+        return Err(format!("出力ファイルの検証に失敗しました: {}", verification_error));
     }
 
     Ok(output_path.to_string_lossy().to_string())
