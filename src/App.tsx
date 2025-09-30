@@ -1533,19 +1533,19 @@ ${dirPath}
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {convertProgress.current - 1} / {convertProgress.total} ファイル処理済み
+                    {convertProgress.status === 'processing' 
+                      ? `${convertProgress.current - 1} / ${convertProgress.total} ファイル処理済み`
+                      : `${convertProgress.current} / ${convertProgress.total} ファイル処理済み`}
                     <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
                   </div>
                   
                   {/* 現在処理中のファイル */}
                   <div class="text-sm text-gray-600 mt-4 break-all">
-                    <span class="font-medium">処理中: </span>
+                    <span class="font-medium">
+                      {convertProgress.status === 'processing' ? '処理中: ' : 
+                       convertProgress.status === 'completed' ? '完了: ' : 'エラー: '}
+                    </span>
                     <span class="text-gray-800">{convertProgress.currentFile}</span>
-                  </div>
-                  
-                  {/* ステータス */}
-                  <div class="text-xs text-gray-500 mt-2">
-                    {convertProgress.status}
                   </div>
                 </>
               ) : processingProgress ? (
@@ -1554,21 +1554,32 @@ ${dirPath}
                   <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
                     <div 
                       class="bg-blue-600 h-4 rounded-full transition-all duration-300"
-                      style={{ width: `${((processingProgress.current - 1) / processingProgress.total) * 100}%` }}
+                      style={{ 
+                        width: `${processingProgress.status === 'processing'
+                          ? ((processingProgress.current - 1) / processingProgress.total) * 100
+                          : (processingProgress.current / processingProgress.total) * 100}%` 
+                      }}
                     ></div>
                   </div>
                   
                   {/* 進捗テキスト */}
                   <div class="text-lg font-medium text-gray-700 mb-2">
-                    {processingProgress.current - 1} / {processingProgress.total} ファイル処理済み
+                    {processingProgress.status === 'processing'
+                      ? `${processingProgress.current - 1} / ${processingProgress.total} ファイル処理済み`
+                      : `${processingProgress.current} / ${processingProgress.total} ファイル処理済み`}
                     <span class="ml-2 text-blue-600">
-                      ({Math.round(((processingProgress.current - 1) / processingProgress.total) * 100)}%)
+                      ({Math.round(processingProgress.status === 'processing'
+                        ? ((processingProgress.current - 1) / processingProgress.total) * 100
+                        : (processingProgress.current / processingProgress.total) * 100)}%)
                     </span>
                   </div>
                   
                   {/* 現在処理中のファイル */}
                   <div class="text-sm text-gray-600 mt-4 break-all">
-                    <span class="font-medium">処理中: </span>
+                    <span class="font-medium">
+                      {processingProgress.status === 'processing' ? '処理中: ' : 
+                       processingProgress.status === 'completed' ? '完了: ' : 'エラー: '}
+                    </span>
                     <span class="text-gray-800">{processingProgress.file_path.split('/').pop() || processingProgress.file_path}</span>
                   </div>
                 </>
