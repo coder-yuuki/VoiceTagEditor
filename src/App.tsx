@@ -1171,19 +1171,6 @@ ${dirPath}
             >
               ソート
             </button>
-            {isProcessing && (
-              <div class="flex items-center gap-2 text-sm text-blue-600">
-                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span>
-                  {convertProgress ? 
-                    `変換中... ${convertProgress.current}/${convertProgress.total} - ${convertProgress.currentFile} (${Math.round(convertProgress.percent)}%)` :
-                    processingProgress ? 
-                      `処理中... ${processingProgress.current}/${processingProgress.total} (${processingProgress.file_path.split('/').pop() || processingProgress.file_path})` : 
-                      'オーディオファイルを処理中...'
-                  }
-                </span>
-              </div>
-            )}
           </div>
           
           <div class="flex items-center gap-2">
@@ -1448,6 +1435,84 @@ ${dirPath}
               >
                 📤 出力実行
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 処理中オーバーレイ */}
+      {isProcessing && (convertProgress || processingProgress) && (
+        <div class="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}>
+          <div class="bg-white rounded-lg p-8 w-[500px] max-w-[90vw]">
+            <div class="text-center">
+              {/* スピナー */}
+              <div class="flex justify-center mb-6">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+              </div>
+              
+              {/* タイトル */}
+              <h2 class="text-xl font-semibold mb-4 text-gray-800">
+                {convertProgress ? '変換処理中...' : 'ファイル読み込み中...'}
+              </h2>
+              
+              {/* 進捗情報 */}
+              {convertProgress ? (
+                <>
+                  {/* プログレスバー */}
+                  <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
+                    <div 
+                      class="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                      style={{ width: `${convertProgress.percent}%` }}
+                    ></div>
+                  </div>
+                  
+                  {/* 進捗テキスト */}
+                  <div class="text-lg font-medium text-gray-700 mb-2">
+                    {convertProgress.current} / {convertProgress.total} ファイル
+                    <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
+                  </div>
+                  
+                  {/* 現在処理中のファイル */}
+                  <div class="text-sm text-gray-600 mt-4 break-all">
+                    <span class="font-medium">処理中: </span>
+                    <span class="text-gray-800">{convertProgress.currentFile}</span>
+                  </div>
+                  
+                  {/* ステータス */}
+                  <div class="text-xs text-gray-500 mt-2">
+                    {convertProgress.status}
+                  </div>
+                </>
+              ) : processingProgress ? (
+                <>
+                  {/* プログレスバー */}
+                  <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
+                    <div 
+                      class="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                      style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                  
+                  {/* 進捗テキスト */}
+                  <div class="text-lg font-medium text-gray-700 mb-2">
+                    {processingProgress.current} / {processingProgress.total} ファイル
+                    <span class="ml-2 text-blue-600">
+                      ({Math.round((processingProgress.current / processingProgress.total) * 100)}%)
+                    </span>
+                  </div>
+                  
+                  {/* 現在処理中のファイル */}
+                  <div class="text-sm text-gray-600 mt-4 break-all">
+                    <span class="font-medium">処理中: </span>
+                    <span class="text-gray-800">{processingProgress.file_path.split('/').pop() || processingProgress.file_path}</span>
+                  </div>
+                </>
+              ) : null}
+              
+              {/* 注意メッセージ */}
+              <div class="mt-6 text-xs text-gray-500">
+                処理が完了するまでお待ちください
+              </div>
             </div>
           </div>
         </div>
