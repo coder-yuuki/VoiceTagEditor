@@ -884,6 +884,73 @@ ${dirPath}
     }
   };
 
+  // 音質設定をバックエンド形式に変換
+  const convertQuality = (format: string, quality: string): string => {
+    switch (format) {
+      case 'MP3':
+        switch (quality) {
+          case 'highest': return '320';
+          case 'high': return '256';
+          case 'medium': return '192';
+          case 'low': return '128';
+          default: return '192';
+        }
+      case 'M4A':
+        // AACの目安ビットレート
+        switch (quality) {
+          case 'highest': return '320';
+          case 'high': return '256';
+          case 'medium': return '192';
+          case 'low': return '128';
+          default: return '192';
+        }
+      default:
+        return '192';
+    }
+  };
+
+  // 変換処理を実行する関数（失敗したファイルのみの再試行にも使用）
+  const performConversion = async (tracksToConvert: any[], albumData: any, outputSettings: any): Promise<ConvertResult> => {
+    console.log('=== 変換処理開始 ===');
+    console.log('変換対象:', tracksToConvert.length, 'ファイル');
+    
+    // 進捗イベントリスナーを設定
+    const unlistenProgress = await listen('convert-progress', (event: any) => {
+      const progress = event.payload;
+      console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
+      
+      // ここで進捗表示UIを更新可能
+      setConvertProgress({
+        current: progress.current,
+        total: progress.total,
+        currentFile: progress.current_file,
+        status: progress.status,
+        percent: progress.progress_percent,
+      });
+    });
+    
+    try {
+      // 変換リクエストを作成
+      const convertRequest = {
+        tracks: tracksToConvert,
+        album_data: albumData,
+        output_settings: outputSettings,
+      };
+      
+      // Tauriコマンドを呼び出し
+      const result = await invoke<ConvertResult>('convert_audio_files', { request: convertRequest });
+      console.log('変換結果:', result);
+      
+      unlistenProgress();
+      return result;
+      
+    } catch (invokeError) {
+      console.error('Tauri invoke エラー:', invokeError);
+      unlistenProgress();
+      throw invokeError;
+    }
+  };
+
   // 実際の出力処理
   const handleActualExport = async () => {
     try {
@@ -919,31 +986,6 @@ ${dirPath}
         album_artwork: albumData.albumArtwork,
       };
       
-      // 音質設定をバックエンド形式に変換
-      const convertQuality = (format: string, quality: string): string => {
-        switch (format) {
-          case 'MP3':
-            switch (quality) {
-              case 'highest': return '320';
-              case 'high': return '256';
-              case 'medium': return '192';
-              case 'low': return '128';
-              default: return '192';
-            }
-          case 'M4A':
-            // AACの目安ビットレート
-            switch (quality) {
-              case 'highest': return '320';
-              case 'high': return '256';
-              case 'medium': return '192';
-              case 'low': return '128';
-              default: return '192';
-            }
-          default:
-            return '192';
-        }
-      };
-      
       // 出力設定を変換用の形式に変換
       const convertOutputSettings = {
         output_path: exportSettings.outputPath,
@@ -952,56 +994,79 @@ ${dirPath}
         overwrite_mode: exportSettings.overwriteMode,
       };
       
-      // 変換リクエストを作成
-      const convertRequest = {
-        tracks: convertTracks,
-        album_data: convertAlbumData,
-        output_settings: convertOutputSettings,
-      };
-      
-      console.log('=== 変換処理開始 ===');
-      console.log('リクエストデータ:', convertRequest);
-      
-      // 進捗イベントリスナーを設定
-      const unlistenProgress = await listen('convert-progress', (event: any) => {
-        const progress = event.payload;
-        console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
-        
-        // ここで進捗表示UIを更新可能
-        setConvertProgress({
-          current: progress.current,
-          total: progress.total,
-          currentFile: progress.current_file,
-          status: progress.status,
-          percent: progress.progress_percent,
-        });
-      });
-      
       try {
-        // Tauriコマンドを呼び出し
-        const result = await invoke<ConvertResult>('convert_audio_files', { request: convertRequest });
-        console.log('変換結果:', result);
+        let currentTracksToConvert = convertTracks;
+        let allConvertedFiles: string[] = [];
+        let retryCount = 0;
+        const maxRetries = 3; // 最大再試行回数
         
-        setIsProcessing(false);
-        setConvertProgress(null);
-        
-        // 結果ダイアログを表示
-        const resultMessage = result.success 
-          ? `変換が完了しました！\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル`
-          : `変換が完了しましたが、一部エラーがありました。\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル\nエラー詳細:${result.failed_files.map(f => `• ${f.source_path}: ${f.error_message}`).join('')}`;
+        while (retryCount <= maxRetries) {
+          // 変換実行
+          const result = await performConversion(currentTracksToConvert, convertAlbumData, convertOutputSettings);
           
-        await confirm(resultMessage, {
-          title: result.success ? '変換完了' : '変換完了（一部エラー）',
-          kind: result.success ? 'info' : 'warning'
-        });
-        
-        unlistenProgress();
+          // 成功したファイルを記録
+          allConvertedFiles = [...allConvertedFiles, ...result.converted_files];
+          
+          setIsProcessing(false);
+          setConvertProgress(null);
+          
+          // エラーがあった場合
+          if (result.failed_files.length > 0) {
+            const errorDetails = result.failed_files
+              .map(f => `\n• ${f.source_path.split('/').pop()}\n  エラー: ${f.error_message}`)
+              .join('');
+            
+            const retryMessage = `変換が完了しましたが、${result.failed_files.length}ファイルでエラーが発生しました。\n\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル${errorDetails}\n\n失敗したファイルを再試行しますか？`;
+            
+            const shouldRetry = await confirm(retryMessage, {
+              title: '変換完了（一部エラー）',
+              kind: 'warning'
+            });
+            
+            if (shouldRetry) {
+              retryCount++;
+              if (retryCount > maxRetries) {
+                await confirm(`最大再試行回数（${maxRetries}回）に達しました。`, {
+                  title: '再試行制限',
+                  kind: 'info'
+                });
+                break;
+              }
+              
+              // 失敗したファイルのみを再変換対象にする
+              currentTracksToConvert = result.failed_files.map(failedFile => {
+                // 元のトラック情報を探す
+                const originalTrack = tracks.find(t => t.filePath === failedFile.source_path);
+                return {
+                  source_path: failedFile.source_path,
+                  disk_number: originalTrack?.diskNumber || '1',
+                  track_number: originalTrack?.trackNumber || '1',
+                  title: originalTrack?.title || 'Unknown',
+                  artists: originalTrack?.artists || [],
+                };
+              });
+              
+              setIsProcessing(true);
+              console.log(`=== 再試行 ${retryCount}/${maxRetries} ===`);
+              continue; // 再試行ループ
+            } else {
+              // 再試行しない場合は終了
+              break;
+            }
+          } else {
+            // すべて成功した場合
+            await confirm(`変換が完了しました！\n\n成功: ${allConvertedFiles.length}ファイル`, {
+              title: '変換完了',
+              kind: 'info'
+            });
+            break;
+          }
+        }
         
       } catch (invokeError) {
         console.error('Tauri invoke エラー:', invokeError);
         setIsProcessing(false);
         setConvertProgress(null);
-        unlistenProgress();
         
         await confirm(`変換処理中にエラーが発生しました。
 
