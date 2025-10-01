@@ -112,6 +112,42 @@ function App() {
     quality: 'high'
   });
 
+  // オンボーディング
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+  const [onboardingStep, setOnboardingStep] = useState<number>(0);
+  const onboardingSteps = [
+    {
+      title: 'ファイルを追加',
+      desc: '音声ファイルやフォルダを画面にドラッグ＆ドロップすると、対応するファイルを自動で読み込みます。フォルダの場合はサブフォルダも走査します。'
+    },
+    {
+      title: 'メタデータ編集',
+      desc: 'タイトル・アーティスト・Disk/Track を編集できます。アーティストはカンマ/セミコロンで複数入力、タグも同様にチップ形式で扱えます。'
+    },
+    {
+      title: '出力する',
+      desc: '右上の「出力」から形式と音質を選び、保存先を指定して変換します。同名ファイルは上書き/別名保存の選択が可能です。'
+    }
+  ];
+
+  useEffect(() => {
+    try {
+      const seen = localStorage.getItem('vte_onboarding_seen_v1');
+      if (!seen) {
+        setShowOnboarding(true);
+      }
+    } catch (e) {
+      // localStorage 不可環境でもアプリは継続
+    }
+  }, []);
+
+  const closeOnboarding = (markSeen: boolean = true) => {
+    if (markSeen) {
+      try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch {}
+    }
+    setShowOnboarding(false);
+  };
+
   // フォーマットに応じた音質設定のオプションを取得
   const getQualityOptions = (format: ExportSettings['format']) => {
     switch (format) {
@@ -1259,6 +1295,13 @@ ${dirPath}
           </div>
           
           <div class="flex items-center gap-2">
+            {/* ヘルプ/ガイドボタン */}
+            <button
+              onClick={() => { setOnboardingStep(0); setShowOnboarding(true); }}
+              class="px-3 py-1 border border-blue-300 rounded bg-blue-50 text-blue-700 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all"
+            >
+              ❓ ガイド
+            </button>
             {/* 一括削除ボタン */}
             <button 
               onClick={handleClearAll}
@@ -1445,7 +1488,7 @@ ${dirPath}
                   type="text"
                   value={exportSettings.outputPath}
                   placeholder="フォルダを選択してください"
-                  readonly
+                  readOnly
                   class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50 focus:outline-none"
                 />
                 <button
@@ -1600,6 +1643,106 @@ ${dirPath}
               {/* 注意メッセージ */}
               <div class="mt-6 text-xs text-gray-500">
                 処理が完了するまでお待ちください
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* オンボーディングオーバーレイ */}
+      {showOnboarding && (
+        <div class="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.55)' }}>
+          <div class="bg-white rounded-xl shadow-xl w-[640px] max-w-[92vw] p-6 relative">
+            <button
+              onClick={() => closeOnboarding(true)}
+              class="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+              aria-label="閉じる"
+              title="閉じる"
+            >
+              ×
+            </button>
+
+            <div class="mb-4">
+              <div class="text-xs text-gray-500 mb-1">ステップ {onboardingStep + 1} / {onboardingSteps.length}</div>
+              <h2 class="text-xl font-semibold text-gray-800">{onboardingSteps[onboardingStep].title}</h2>
+            </div>
+
+            <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+              {onboardingSteps[onboardingStep].desc}
+            </div>
+
+            {/* 補助ビジュアル */}
+            <div class="mt-5 bg-gray-50 border border-gray-200 rounded-lg p-4 text-xs text-gray-600">
+              {onboardingStep === 0 && (
+                <>
+                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
+                  <ul class="list-disc pl-5 space-y-1">
+                    <li>フォルダをドロップすると自動で音声と画像をスキャンします</li>
+                    <li>カバー画像はファイル名に cover/album を含むものを優先して選択します</li>
+                  </ul>
+                </>
+              )}
+              {onboardingStep === 1 && (
+                <>
+                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
+                  <ul class="list-disc pl-5 space-y-1">
+                    <li>アーティスト/タグはカンマ・セミコロンで区切って一括入力できます</li>
+                    <li>タイトル欄は長文でも自動で高さ調整されます</li>
+                  </ul>
+                </>
+              )}
+              {onboardingStep === 2 && (
+                <>
+                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
+                  <ul class="list-disc pl-5 space-y-1">
+                    <li>同名ファイルは「上書き」または「別名で保存」を選べます</li>
+                    <li>変換中は進捗と現在処理中のファイルが表示されます</li>
+                  </ul>
+                </>
+              )}
+            </div>
+
+            {/* ドットインジケータ */}
+            <div class="mt-5 flex items-center justify-center gap-2">
+              {onboardingSteps.map((_, idx) => (
+                <div
+                  key={idx}
+                  class={`w-2.5 h-2.5 rounded-full ${idx === onboardingStep ? 'bg-blue-600' : 'bg-gray-300'}`}
+                ></div>
+              ))}
+            </div>
+
+            {/* アクション */}
+            <div class="mt-6 flex items-center justify-between">
+              <button
+                onClick={() => closeOnboarding(true)}
+                class="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
+              >
+                スキップ
+              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  onClick={() => setOnboardingStep(Math.max(0, onboardingStep - 1))}
+                  disabled={onboardingStep === 0}
+                  class="px-3 py-1.5 border border-gray-300 rounded text-xs text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  戻る
+                </button>
+                {onboardingStep < onboardingSteps.length - 1 ? (
+                  <button
+                    onClick={() => setOnboardingStep(Math.min(onboardingSteps.length - 1, onboardingStep + 1))}
+                    class="px-3 py-1.5 border border-blue-300 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    次へ
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => closeOnboarding(true)}
+                    class="px-3 py-1.5 border border-green-300 rounded text-xs bg-green-600 text-white hover:bg-green-700"
+                  >
+                    はじめる
+                  </button>
+                )}
               </div>
             </div>
           </div>
