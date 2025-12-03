@@ -102,8 +102,8 @@ interface ExportSettings {
 function App() {
   const [albumData, setAlbumData] = useState<AlbumData>({
     albumArtwork: null,
-    albumTitle: "Album Title",
-    albumArtist: "Album Artist",
+    albumTitle: "",
+    albumArtist: "",
     releaseDate: "2000-01-01",
     tags: [],
     currentTagInput: "",
@@ -1216,37 +1216,37 @@ ${dirPath}
           ) : (
             <div class="text-center text-zinc-400 flex flex-col items-center gap-2">
               <ImageIcon size={48} class="text-zinc-300 group-hover:text-zinc-400 transition-colors" />
-              <div class="text-sm font-medium">Album Artwork</div>
-              <div class="text-xs opacity-70">Drop image here</div>
+              <div class="text-sm font-medium">アルバムアートワーク</div>
+              <div class="text-xs opacity-70">画像をドロップ</div>
             </div>
           )}
         </div>
 
         <div class="flex flex-col gap-3">
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Album Title</label>
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">アルバムタイトル</label>
             <input
               type="text"
               value={albumData.albumTitle}
               onInput={(e) => handleAlbumFieldChange('albumTitle', e.currentTarget.value)}
-              placeholder="Album Title"
+              placeholder="アルバムタイトル"
               class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
             />
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Album Artist</label>
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">アルバムアーティスト</label>
             <input
               type="text"
               value={albumData.albumArtist}
               onInput={(e) => handleAlbumFieldChange('albumArtist', e.currentTarget.value)}
-              placeholder="Album Artist"
+              placeholder="アルバムアーティスト"
               class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
             />
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Release Date</label>
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">リリース日</label>
             <div class="relative">
               <input
                 type="text"
@@ -1260,7 +1260,7 @@ ${dirPath}
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Tags</label>
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">タグ</label>
 
             {/* タグ入力フィールド */}
             <div class="min-h-[2.5rem] px-2 py-1.5 border border-zinc-300 rounded-md text-sm bg-white focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all flex flex-wrap gap-1.5 items-center">
@@ -1288,7 +1288,7 @@ ${dirPath}
                 value={albumData.currentTagInput}
                 onInput={(e) => handleTagInput(e.currentTarget.value)}
                 onKeyDown={(e) => handleTagKeyDown(e)}
-                placeholder={albumData.tags.length === 0 ? "Add tags..." : ""}
+                placeholder={albumData.tags.length === 0 ? "タグを追加..." : ""}
                 class="flex-1 min-w-[80px] outline-none bg-transparent text-sm placeholder-zinc-400"
               />
             </div>
@@ -1305,7 +1305,7 @@ ${dirPath}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
             >
               <SortAsc size={14} />
-              <span>Sort</span>
+              <span>ソート</span>
             </button>
           </div>
 
@@ -1316,7 +1316,7 @@ ${dirPath}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-600 text-xs font-medium hover:bg-zinc-50 hover:text-zinc-900 transition-all shadow-sm"
             >
               <HelpCircle size={14} />
-              <span>Guide</span>
+              <span>ガイド</span>
             </button>
             {/* 一括削除ボタン */}
             <button
@@ -1325,7 +1325,7 @@ ${dirPath}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-red-600 text-xs font-medium hover:bg-red-50 hover:border-red-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-zinc-300"
             >
               <Trash2 size={14} />
-              <span>Clear All</span>
+              <span>すべて削除</span>
             </button>
 
             {/* 出力ボタン */}
@@ -1335,7 +1335,7 @@ ${dirPath}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-transparent rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
             >
               <Upload size={14} />
-              <span>Export</span>
+              <span>出力</span>
             </button>
           </div>
         </div>
@@ -1348,10 +1348,10 @@ ${dirPath}
                   <Music size={48} class="text-zinc-300" />
                 </div>
                 <div class="text-sm">
-                  <span class="font-medium text-zinc-600 block mb-1">Drop audio files or folders here</span>
+                  <span class="font-medium text-zinc-600 block mb-1">音声ファイルまたはフォルダをドロップ</span>
                   <span class="text-xs text-zinc-400">
-                    Supports: WAV, MP3, FLAC, M4A<br />
-                    Folders will be scanned recursively
+                    対応形式: WAV, MP3, FLAC, M4A<br />
+                    フォルダは再帰的にスキャンされます
                   </span>
                 </div>
               </div>
@@ -1360,11 +1360,11 @@ ${dirPath}
           <table class="w-full table-fixed divide-y divide-zinc-200">
             <thead class="bg-zinc-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Del</th>
-                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Disk</th>
-                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Track</th>
-                <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Title</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Artists</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">削除</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">ディスク</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">トラック</th>
+                <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">タイトル</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">アーティスト</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-zinc-100">
@@ -1374,7 +1374,7 @@ ${dirPath}
                     <button
                       onClick={() => handleTrackDelete(track.id)}
                       class="p-1.5 border border-transparent rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      title="Delete Track"
+                      title="トラックを削除"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1435,7 +1435,7 @@ ${dirPath}
                                 wordBreak: 'break-word'
                               }}
                               onClick={() => copyArtist(artist)}
-                              title={`Click to copy "${artist}"`}
+                              title={`クリックしてコピー "${artist}"`}
                             >
                               <span style={{
                                 wordBreak: 'break-word',
@@ -1462,7 +1462,7 @@ ${dirPath}
                           onInput={(e) => handleArtistInput(track.id, e.currentTarget.value)}
                           onPaste={(e) => handleArtistPaste(track.id, e)}
                           onKeyDown={(e) => handleArtistKeyDown(track.id, e)}
-                          placeholder={track.artists.length === 0 ? "Add artists..." : ""}
+                          placeholder={track.artists.length === 0 ? "アーティストを追加..." : ""}
                           class="flex-1 min-w-[80px] outline-none bg-transparent text-xs placeholder-zinc-400"
                         />
                       </div>
@@ -1472,7 +1472,7 @@ ${dirPath}
                         <button
                           onClick={() => copyAllArtists(track.artists)}
                           class="p-1.5 border border-zinc-200 rounded bg-white text-zinc-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all self-start flex-shrink-0"
-                          title={`Copy all artists: ${track.artists.join('; ')}`}
+                          title={`全アーティストをコピー: ${track.artists.join('; ')}`}
                         >
                           <Clipboard size={14} />
                         </button>
@@ -1492,17 +1492,17 @@ ${dirPath}
           <div class="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-auto scale-100 animate-in zoom-in-95 duration-200">
             <h2 class="text-lg font-semibold mb-4 text-zinc-800 flex items-center gap-2">
               <Settings size={20} />
-              Export Settings
+              出力設定
             </h2>
 
             {/* 保存先フォルダ */}
             <div class="mb-4">
-              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Output Folder</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">保存先フォルダ</label>
               <div class="flex gap-2">
                 <input
                   type="text"
                   value={exportSettings.outputPath}
-                  placeholder="Select folder..."
+                  placeholder="フォルダを選択..."
                   readOnly
                   class="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm bg-zinc-50 focus:outline-none text-zinc-600"
                 />
@@ -1517,7 +1517,7 @@ ${dirPath}
 
             {/* 同名ファイル処理 */}
             <div class="mb-4">
-              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">File Conflict</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">同名ファイルの処理</label>
               <select
                 value={exportSettings.overwriteMode}
                 onChange={(e) => setExportSettings(prev => ({
@@ -1526,14 +1526,14 @@ ${dirPath}
                 }))}
                 class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
-                <option value="rename">Rename (keep both)</option>
-                <option value="overwrite">Overwrite</option>
+                <option value="rename">別名で保存</option>
+                <option value="overwrite">上書き保存</option>
               </select>
             </div>
 
             {/* ファイル形式 */}
             <div class="mb-4">
-              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Format</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">フォーマット</label>
               <select
                 value={exportSettings.format}
                 onChange={(e) => handleFormatChange(e.currentTarget.value as ExportSettings['format'])}
@@ -1546,7 +1546,7 @@ ${dirPath}
 
             {/* 音質設定 */}
             <div class="mb-6">
-              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Quality</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">音質</label>
               <select
                 value={exportSettings.quality}
                 onChange={(e) => setExportSettings(prev => ({
@@ -1569,7 +1569,7 @@ ${dirPath}
                 onClick={() => setShowExportDialog(false)}
                 class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
               >
-                Cancel
+                キャンセル
               </button>
               <button
                 onClick={handleActualExport}
@@ -1577,7 +1577,7 @@ ${dirPath}
                 class="px-4 py-2 border border-transparent rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
               >
                 <Upload size={16} />
-                Export
+                出力
               </button>
             </div>
           </div>
@@ -1598,7 +1598,7 @@ ${dirPath}
 
                 {/* タイトル */}
                 <h2 class="text-xl font-semibold mb-4 text-zinc-800">
-                  {convertProgress ? 'Converting...' : 'Processing Files...'}
+                  {convertProgress ? '変換中...' : 'ファイルを処理中...'}
                 </h2>
 
                 {/* 進捗情報 */}
@@ -1614,15 +1614,15 @@ ${dirPath}
 
                     {/* 進捗テキスト */}
                     <div class="text-sm font-medium text-zinc-600 mb-2">
-                      {completedCount} / {convertProgress.total} files processed
+                      {completedCount} / {convertProgress.total} ファイルを処理済み
                       <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
                     </div>
 
                     {/* 現在処理中のファイル */}
                     <div class="text-xs text-zinc-500 mt-4 break-all bg-zinc-50 p-2 rounded border border-zinc-100">
                       <span class="font-medium mr-1">
-                        {convertProgress.status === 'processing' ? 'Processing: ' :
-                          convertProgress.status === 'completed' ? 'Done: ' : 'Error: '}
+                        {convertProgress.status === 'processing' ? '処理中: ' :
+                          convertProgress.status === 'completed' ? '完了: ' : 'エラー: '}
                       </span>
                       <span class="text-zinc-700">{convertProgress.currentFile}</span>
                     </div>
@@ -1641,7 +1641,7 @@ ${dirPath}
 
                     {/* 進捗テキスト */}
                     <div class="text-sm font-medium text-zinc-600 mb-2">
-                      {completedCount} / {processingProgress.total} files processed
+                      {completedCount} / {processingProgress.total} ファイルを処理済み
                       <span class="ml-2 text-blue-600">
                         ({completedCount > 0 ? Math.round((completedCount / processingProgress.total) * 100) : 0}%)
                       </span>
@@ -1650,8 +1650,8 @@ ${dirPath}
                     {/* 現在処理中のファイル */}
                     <div class="text-xs text-zinc-500 mt-4 break-all bg-zinc-50 p-2 rounded border border-zinc-100">
                       <span class="font-medium mr-1">
-                        {processingProgress.status === 'processing' ? 'Processing: ' :
-                          processingProgress.status === 'completed' ? 'Done: ' : 'Error: '}
+                        {processingProgress.status === 'processing' ? '処理中: ' :
+                          processingProgress.status === 'completed' ? '完了: ' : 'エラー: '}
                       </span>
                       <span class="text-zinc-700">{processingProgress.file_path.split('/').pop() || processingProgress.file_path}</span>
                     </div>
@@ -1660,7 +1660,7 @@ ${dirPath}
 
                 {/* 注意メッセージ */}
                 <div class="mt-6 text-xs text-zinc-400">
-                  Please wait while we process your files...
+                  処理が完了するまでお待ちください...
                 </div>
               </div>
             </div>
@@ -1683,7 +1683,7 @@ ${dirPath}
               </button>
 
               <div class="mb-6">
-                <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">Step {onboardingStep + 1} of {onboardingSteps.length}</div>
+                <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">ステップ {onboardingStep + 1} / {onboardingSteps.length}</div>
                 <h2 class="text-2xl font-bold text-zinc-800">{onboardingSteps[onboardingStep].title}</h2>
               </div>
 
@@ -1697,11 +1697,11 @@ ${dirPath}
                   <>
                     <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
                       <AlertCircle size={16} class="text-blue-500" />
-                      Tips
+                      ヒント
                     </div>
                     <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                      <li>Folders will be scanned recursively for audio and images.</li>
-                      <li>Cover art is auto-detected from files named "cover" or "album".</li>
+                      <li>フォルダをドロップすると、音声と画像を再帰的にスキャンします。</li>
+                      <li>カバー画像は "cover" や "album" という名前のファイルから自動検出されます。</li>
                     </ul>
                   </>
                 )}
@@ -1709,11 +1709,11 @@ ${dirPath}
                   <>
                     <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
                       <AlertCircle size={16} class="text-blue-500" />
-                      Tips
+                      ヒント
                     </div>
                     <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                      <li>Use commas or semicolons to add multiple artists or tags at once.</li>
-                      <li>The title field auto-expands for long titles.</li>
+                      <li>カンマやセミコロンで区切って、複数のアーティストやタグを一括入力できます。</li>
+                      <li>タイトル入力欄は長いタイトルに合わせて自動的に拡張されます。</li>
                     </ul>
                   </>
                 )}
@@ -1721,11 +1721,11 @@ ${dirPath}
                   <>
                     <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
                       <AlertCircle size={16} class="text-blue-500" />
-                      Tips
+                      ヒント
                     </div>
                     <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                      <li>You can choose to Overwrite or Rename duplicate files.</li>
-                      <li>Progress is shown in real-time during conversion.</li>
+                      <li>重複ファイルは「上書き」または「別名で保存」を選択できます。</li>
+                      <li>変換中はリアルタイムで進捗が表示されます。</li>
                     </ul>
                   </>
                 )}
@@ -1747,7 +1747,7 @@ ${dirPath}
                   onClick={() => closeOnboarding(true)}
                   class="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
                 >
-                  Skip
+                  スキップ
                 </button>
                 <div class="flex items-center gap-3">
                   <button
@@ -1755,14 +1755,14 @@ ${dirPath}
                     disabled={onboardingStep === 0}
                     class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
-                    Back
+                    戻る
                   </button>
                   {onboardingStep < onboardingSteps.length - 1 ? (
                     <button
                       onClick={() => setOnboardingStep(Math.min(onboardingSteps.length - 1, onboardingStep + 1))}
                       class="px-4 py-2 border border-transparent rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-all"
                     >
-                      Next
+                      次へ
                     </button>
                   ) : (
                     <button
@@ -1770,7 +1770,7 @@ ${dirPath}
                       class="px-4 py-2 border border-transparent rounded-md text-sm bg-green-600 text-white hover:bg-green-700 shadow-sm transition-all flex items-center gap-2"
                     >
                       <Check size={16} />
-                      Get Started
+                      はじめる
                     </button>
                   )}
                 </div>
