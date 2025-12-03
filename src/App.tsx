@@ -1361,8 +1361,8 @@ ${dirPath}
             <thead class="bg-zinc-50 sticky top-0 z-10 shadow-sm">
               <tr>
                 <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">削除</th>
-                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">ディスク</th>
-                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">トラック</th>
+                <th class="w-24 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">ディスク</th>
+                <th class="w-24 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">トラック</th>
                 <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">タイトル</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">アーティスト</th>
               </tr>
