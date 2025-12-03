@@ -3,6 +3,21 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import {
+  Music,
+  Calendar,
+  X,
+  Image as ImageIcon,
+  Trash2,
+  Upload,
+  HelpCircle,
+  SortAsc,
+  Clipboard,
+  Check,
+  AlertCircle,
+  FolderOpen,
+  Settings
+} from 'lucide-preact';
 import "./App.css";
 
 interface Track {
@@ -97,7 +112,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
   const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
-  
+
   // 完了数を追跡（並列処理でイベントが前後するため）
   const [completedCount, setCompletedCount] = useState(0);
 
@@ -143,7 +158,7 @@ function App() {
 
   const closeOnboarding = (markSeen: boolean = true) => {
     if (markSeen) {
-      try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch {}
+      try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch { }
     }
     setShowOnboarding(false);
   };
@@ -176,18 +191,18 @@ function App() {
   const normalizeNumberString = (value: string): string => {
     // 数字以外の文字を除去
     const digitsOnly = value.replace(/[^0-9]/g, '');
-    
+
     if (digitsOnly === '') {
       return '';
     }
-    
+
     // 先頭の0を除去して数字に変換、再度文字列に
     const numberValue = parseInt(digitsOnly, 10);
     // NaNチェックと0の場合の処理
     if (isNaN(numberValue)) {
       return '';
     }
-    
+
     return numberValue.toString();
   };
 
@@ -202,7 +217,7 @@ function App() {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
     const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a'];
     const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
-    
+
     if (imageExtensions.includes(fileExtension)) {
       return 'image';
     } else if (audioExtensions.includes(fileExtension)) {
@@ -227,7 +242,7 @@ function App() {
   const processAudioFiles = useCallback(async (filePaths: string[], preferExternalArtwork: boolean = false) => {
     try {
       setIsProcessing(true);
-      
+
       // 最新のトラック状態を取得して重複チェック
       setTracks(currentTracks => {
         // 既存のファイルパスをチェックして重複を除外
@@ -236,11 +251,11 @@ function App() {
         console.log('既存のファイルパス:', existingPaths);
         console.log(`既存のトラック: ${currentTracks.map(track => track.title).join(', ')}`);
         console.log('ドロップされたファイルパス:', filePaths);
-        
+
         const newFilePaths = filePaths.filter(path => !existingPaths.has(path));
-        
+
         console.log('重複除外後のファイルパス:', newFilePaths);
-        
+
         if (newFilePaths.length === 0) {
           console.log('すべてのファイルは既に読み込み済みです');
           confirm('選択されたファイルはすべて既に読み込み済みです。', {
@@ -250,7 +265,7 @@ function App() {
           setIsProcessing(false);
           return currentTracks; // 状態変更なし
         }
-        
+
         if (newFilePaths.length < filePaths.length) {
           const skippedCount = filePaths.length - newFilePaths.length;
           console.log(`${skippedCount}個のファイルは既に読み込み済みのためスキップします`);
@@ -258,7 +273,7 @@ function App() {
 
         // 非同期処理を開始（状態は後で更新）。外部画像を優先するかフラグを渡す
         processNewFiles(newFilePaths, preferExternalArtwork === true);
-        
+
         return currentTracks; // 現時点では状態変更なし
       });
     } catch (error) {
@@ -272,7 +287,7 @@ function App() {
     try {
       // 完了数をリセット
       setCompletedCount(0);
-      
+
       // FFmpegのチェック
       const ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
       if (!ffmpegAvailable) {
@@ -303,13 +318,13 @@ function App() {
 
         if (result.metadata) {
           const metadata = result.metadata;
-          
+
           // アルバムアートを取得（最初のファイルからのみ）。
           // ただし、フォルダ/ドロップに画像候補が含まれている場合は埋め込みを使わない。
           if (!hasExternalImageCandidate && !hasAlbumArt && metadata.album_art) {
             hasAlbumArt = true;
             albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
-            
+
             // アルバムアートをキャッシュに保存
             try {
               const cachePath = await invoke<string>('save_album_art_to_cache', {
@@ -317,7 +332,7 @@ function App() {
                 albumTitle: metadata.album || 'Unknown Album',
                 albumArtist: metadata.album_artist || 'Unknown Artist'
               });
-              
+
               setAlbumData(prev => ({
                 ...prev,
                 albumArtwork: albumArtData,
@@ -351,7 +366,7 @@ function App() {
             }));
             hasAlbumInfo = true;
           }
-          
+
           // タグを収集（重複を避けて追加）
           if (metadata.tags && metadata.tags.length > 0) {
             for (const tag of metadata.tags) {
@@ -392,7 +407,7 @@ function App() {
       if (newTracks.length > 0) {
         setTracks(prev => [...prev, ...newTracks]);
       }
-      
+
       // 収集したタグをアルバムデータに追加
       if (allTags.length > 0) {
         setAlbumData(prev => {
@@ -428,12 +443,12 @@ function App() {
       try {
         unlisten = await listen<ProgressEvent>('audio-processing-progress', (event) => {
           const progress = event.payload;
-          
+
           // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
           if (progress.status === 'completed' || progress.status === 'error') {
             setCompletedCount(prev => Math.max(prev, progress.current));
           }
-          
+
           setProcessingProgress(progress);
         });
       } catch (error) {
@@ -456,14 +471,14 @@ function App() {
 
     const setupListener = async () => {
       console.log('Setting up file drop listener...');
-      
+
       try {
         unlisten = await listen('tauri://drag-drop', async (event) => {
           console.log('File drop event received:', event);
           const { paths } = event.payload as { paths: string[] };
           console.log('Dropped paths:', paths);
           console.log('Number of paths dropped:', paths.length);
-          
+
           if (paths.length === 0) return;
 
           // ファイルタイプで分類
@@ -475,7 +490,7 @@ function App() {
           // パスが拡張子を持つかどうかで判断（拡張子なし=フォルダ）
           for (const path of paths) {
             const hasExtension = path.includes('.') && path.lastIndexOf('.') > path.lastIndexOf('/');
-            
+
             if (!hasExtension) {
               // 拡張子がない場合はディレクトリとして扱う
               console.log(`Found directory: ${path}`);
@@ -503,7 +518,7 @@ function App() {
           let directoryImageFiles: string[] = [];
           if (directoryPaths.length > 0) {
             console.log('Processing directories:', directoryPaths);
-            
+
             for (const dirPath of directoryPaths) {
               try {
                 const files = await invoke<string[]>('scan_directory_for_audio_files', {
@@ -621,7 +636,7 @@ ${dirPath}
     const hue = hash % 360;
     const saturation = 65; // 適度な彩度
     const lightness = 85; // 明るい背景色
-    
+
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   };
 
@@ -640,7 +655,7 @@ ${dirPath}
     const hash = stringToHash(text);
     const backgroundColor = hashToColor(hash);
     const textColor = getTextColor(backgroundColor);
-    
+
     return {
       backgroundColor,
       color: textColor
@@ -653,7 +668,7 @@ ${dirPath}
       const parts = value.split(/[,，]/);
       const newTags = parts.slice(0, -1).map(tag => tag.trim()).filter(tag => tag.length > 0);
       const remainingInput = parts[parts.length - 1].trim();
-      
+
       if (newTags.length > 0) {
         setAlbumData({
           ...albumData,
@@ -678,17 +693,17 @@ ${dirPath}
       const parts = value.split(/[,，]/);
       const newArtists = parts.slice(0, -1).map(artist => artist.trim()).filter(artist => artist.length > 0);
       const remainingInput = parts[parts.length - 1].trim();
-      
+
       if (newArtists.length > 0) {
         const track = tracks.find(t => t.id === trackId);
         if (track) {
-          setTracks(tracks.map(t => 
-            t.id === trackId 
-              ? { 
-                  ...t, 
-                  artists: [...t.artists, ...newArtists],
-                  currentArtistInput: remainingInput
-                }
+          setTracks(tracks.map(t =>
+            t.id === trackId
+              ? {
+                ...t,
+                artists: [...t.artists, ...newArtists],
+                currentArtistInput: remainingInput
+              }
               : t
           ));
         }
@@ -704,7 +719,7 @@ ${dirPath}
   const removeArtistTag = (trackId: string, artistToRemove: string) => {
     const track = tracks.find(t => t.id === trackId);
     if (!track) return;
-    
+
     const updatedArtists = track.artists.filter(artist => artist !== artistToRemove);
     handleTrackChange(trackId, 'artists', updatedArtists);
   };
@@ -745,14 +760,14 @@ ${dirPath}
   // ペーストイベントハンドラー（複数アーティスト対応）
   const handleArtistPaste = (trackId: string, event: ClipboardEvent) => {
     event.preventDefault();
-    
+
     const pastedText = event.clipboardData?.getData('text') || '';
     if (!pastedText.trim()) return;
-    
+
     // セミコロンとカンマの両方で分割（全角も対応）
     const separatorRegex = /[;；,，]/;
     let newArtists: string[] = [];
-    
+
     if (separatorRegex.test(pastedText)) {
       // 区切り文字がある場合は分割
       newArtists = pastedText
@@ -766,22 +781,22 @@ ${dirPath}
         newArtists = [trimmed];
       }
     }
-    
+
     if (newArtists.length > 0) {
       const track = tracks.find(t => t.id === trackId);
       if (track) {
         // 重複を除去して追加
         const existingArtists = new Set(track.artists);
         const uniqueNewArtists = newArtists.filter(artist => !existingArtists.has(artist));
-        
+
         if (uniqueNewArtists.length > 0) {
-          setTracks(tracks.map(t => 
-            t.id === trackId 
-              ? { 
-                  ...t, 
-                  artists: [...t.artists, ...uniqueNewArtists],
-                  currentArtistInput: '' // ペースト後は入力フィールドをクリア
-                }
+          setTracks(tracks.map(t =>
+            t.id === trackId
+              ? {
+                ...t,
+                artists: [...t.artists, ...uniqueNewArtists],
+                currentArtistInput: '' // ペースト後は入力フィールドをクリア
+              }
               : t
           ));
           console.log(`Pasted artists: ${uniqueNewArtists.join(', ')}`);
@@ -796,26 +811,26 @@ ${dirPath}
   const handleArtistKeyDown = (trackId: string, event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      
+
       const track = tracks.find(t => t.id === trackId);
       if (!track || !track.currentArtistInput.trim()) return;
-      
+
       const newArtist = track.currentArtistInput.trim();
-      
+
       // 重複チェック
       if (track.artists.includes(newArtist)) {
         console.log('Artist already exists');
         return;
       }
-      
+
       // アーティストを追加して入力フィールドをクリア
-      setTracks(tracks.map(t => 
-        t.id === trackId 
-          ? { 
-              ...t, 
-              artists: [...t.artists, newArtist],
-              currentArtistInput: ''
-            }
+      setTracks(tracks.map(t =>
+        t.id === trackId
+          ? {
+            ...t,
+            artists: [...t.artists, newArtist],
+            currentArtistInput: ''
+          }
           : t
       ));
       console.log(`Added artist: ${newArtist}`);
@@ -826,17 +841,17 @@ ${dirPath}
   const handleTagKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      
+
       if (!albumData.currentTagInput.trim()) return;
-      
+
       const newTag = albumData.currentTagInput.trim();
-      
+
       // 重複チェック
       if (albumData.tags.includes(newTag)) {
         console.log('Tag already exists');
         return;
       }
-      
+
       // タグを追加して入力フィールドをクリア
       setAlbumData({
         ...albumData,
@@ -848,7 +863,7 @@ ${dirPath}
   };
 
   const handleTrackChange = (trackId: string, field: keyof Track, value: string | boolean | string[]) => {
-    setTracks(tracks.map(track => 
+    setTracks(tracks.map(track =>
       track.id === trackId ? { ...track, [field]: value } : track
     ));
   };
@@ -859,41 +874,41 @@ ${dirPath}
       // 第1ソート: Disk番号
       const diskA = parseInt(a.diskNumber) || 0;
       const diskB = parseInt(b.diskNumber) || 0;
-      
+
       if (diskA !== diskB) {
         return diskA - diskB;
       }
-      
+
       // 第2ソート: Track番号
       const trackA = parseInt(a.trackNumber) || 0;
       const trackB = parseInt(b.trackNumber) || 0;
-      
+
       return trackA - trackB;
     });
-    
+
     setTracks(sortedTracks);
   };
   const handleTrackDelete = async (trackId: string) => {
     console.log("Deleting track:", trackId);
-    console.log("Available tracks:", tracks.map(t => ({id: t.id, title: t.title})));
+    console.log("Available tracks:", tracks.map(t => ({ id: t.id, title: t.title })));
     const track = tracks.find(t => t.id === trackId);
     console.log("Found track:", track);
     if (!track) {
       console.log("Track not found!");
       return;
     }
-    
+
     const confirmMessage = `「${track.title}」を削除しますか？
 この操作は取り消せません。`;
     console.log("Showing confirm dialog:", confirmMessage);
-    
+
     try {
       const userConfirmed = await confirm(confirmMessage, {
         title: "トラック削除の確認",
         kind: "warning"
       });
       console.log("User confirmed:", userConfirmed);
-      
+
       if (userConfirmed) {
         console.log("Deleting track from array");
         const newTracks = tracks.filter(t => t.id !== trackId);
@@ -923,7 +938,7 @@ ${dirPath}
         multiple: false,
         title: '出力先フォルダを選択'
       });
-      
+
       if (selected && typeof selected === 'string') {
         setExportSettings(prev => ({ ...prev, outputPath: selected }));
       }
@@ -961,20 +976,20 @@ ${dirPath}
   const performConversion = async (tracksToConvert: any[], albumData: any, outputSettings: any): Promise<ConvertResult> => {
     console.log('=== 変換処理開始 ===');
     console.log('変換対象:', tracksToConvert.length, 'ファイル');
-    
+
     // 完了数をリセット
     setCompletedCount(0);
-    
+
     // 進捗イベントリスナーを設定
     const unlistenProgress = await listen('convert-progress', (event: any) => {
       const progress = event.payload;
       console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
-      
+
       // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
       if (progress.status === 'completed' || progress.status === 'error') {
         setCompletedCount(prev => Math.max(prev, progress.current));
       }
-      
+
       // ここで進捗表示UIを更新可能
       setConvertProgress({
         current: progress.current,
@@ -984,7 +999,7 @@ ${dirPath}
         percent: progress.progress_percent,
       });
     });
-    
+
     try {
       // 変換リクエストを作成
       const convertRequest = {
@@ -992,14 +1007,14 @@ ${dirPath}
         album_data: albumData,
         output_settings: outputSettings,
       };
-      
+
       // Tauriコマンドを呼び出し
       const result = await invoke<ConvertResult>('convert_audio_files', { request: convertRequest });
       console.log('変換結果:', result);
-      
+
       unlistenProgress();
       return result;
-      
+
     } catch (invokeError) {
       console.error('Tauri invoke エラー:', invokeError);
       unlistenProgress();
@@ -1021,7 +1036,7 @@ ${dirPath}
 
       setShowExportDialog(false);
       setIsProcessing(true);
-      
+
       // トラックデータを変換用の形式に変換
       const convertTracks = tracks.map(track => ({
         source_path: track.filePath || '',
@@ -1030,7 +1045,7 @@ ${dirPath}
         title: track.title,
         artists: track.artists,
       }));
-      
+
       // アルバムデータを変換用の形式に変換
       const convertAlbumData = {
         album_title: albumData.albumTitle,
@@ -1041,7 +1056,7 @@ ${dirPath}
         album_artwork_cache_path: albumData.albumArtworkCachePath,
         album_artwork: albumData.albumArtwork,
       };
-      
+
       // 出力設定を変換用の形式に変換
       const convertOutputSettings = {
         output_path: exportSettings.outputPath,
@@ -1049,36 +1064,36 @@ ${dirPath}
         quality: convertQuality(exportSettings.format, exportSettings.quality),
         overwrite_mode: exportSettings.overwriteMode,
       };
-      
+
       try {
         let currentTracksToConvert = convertTracks;
         let allConvertedFiles: string[] = [];
         let retryCount = 0;
         const maxRetries = 3; // 最大再試行回数
-        
+
         while (retryCount <= maxRetries) {
           // 変換実行
           const result = await performConversion(currentTracksToConvert, convertAlbumData, convertOutputSettings);
-          
+
           // 成功したファイルを記録
           allConvertedFiles = [...allConvertedFiles, ...result.converted_files];
-          
+
           setIsProcessing(false);
           setConvertProgress(null);
-          
+
           // エラーがあった場合
           if (result.failed_files.length > 0) {
             const errorDetails = result.failed_files
               .map(f => `\n• ${f.source_path.split('/').pop()}\n  エラー: ${f.error_message}`)
               .join('');
-            
+
             const retryMessage = `変換が完了しましたが、${result.failed_files.length}ファイルでエラーが発生しました。\n\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル${errorDetails}\n\n失敗したファイルを再試行しますか？`;
-            
+
             const shouldRetry = await confirm(retryMessage, {
               title: '変換完了（一部エラー）',
               kind: 'warning'
             });
-            
+
             if (shouldRetry) {
               retryCount++;
               if (retryCount > maxRetries) {
@@ -1088,7 +1103,7 @@ ${dirPath}
                 });
                 break;
               }
-              
+
               // 失敗したファイルのみを再変換対象にする
               currentTracksToConvert = result.failed_files.map(failedFile => {
                 // 元のトラック情報を探す
@@ -1101,7 +1116,7 @@ ${dirPath}
                   artists: originalTrack?.artists || [],
                 };
               });
-              
+
               setIsProcessing(true);
               console.log(`=== 再試行 ${retryCount}/${maxRetries} ===`);
               continue; // 再試行ループ
@@ -1118,12 +1133,12 @@ ${dirPath}
             break;
           }
         }
-        
+
       } catch (invokeError) {
         console.error('Tauri invoke エラー:', invokeError);
         setIsProcessing(false);
         setConvertProgress(null);
-        
+
         await confirm(`変換処理中にエラーが発生しました。
 
 エラー: ${invokeError}`, {
@@ -1131,12 +1146,12 @@ ${dirPath}
           kind: 'error'
         });
       }
-      
+
     } catch (error) {
       console.error('出力処理エラー:', error);
       setIsProcessing(false);
       setConvertProgress(null);
-      
+
       await confirm(`出力処理中にエラーが発生しました。
 
 エラー: ${error}`, {
@@ -1191,174 +1206,180 @@ ${dirPath}
   return (
     <div class="flex h-screen bg-gray-100">
       {/* サイドバー */}
-      <div class="w-80 bg-gray-200 p-3 flex flex-col gap-3 border-r border-gray-300">
-        <div 
-          class="w-full aspect-square bg-white border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center cursor-pointer hover:border-gray-600 transition-colors"
+      {/* サイドバー */}
+      <div class="w-80 bg-zinc-50 p-4 flex flex-col gap-4 border-r border-zinc-200 shrink-0">
+        <div
+          class="w-full aspect-square bg-white border-2 border-dashed border-zinc-300 rounded-xl flex items-center justify-center cursor-pointer hover:border-zinc-400 transition-colors group relative overflow-hidden"
         >
           {albumData.albumArtwork ? (
-            <img src={albumData.albumArtwork} alt="Album Artwork" class="max-w-full max-h-full object-contain rounded-md" />
+            <img src={albumData.albumArtwork} alt="Album Artwork" class="w-full h-full object-contain" />
           ) : (
-            <div class="text-center text-gray-500 text-sm">
-              Album Artwork<br />
-              Drop image file here
+            <div class="text-center text-zinc-400 flex flex-col items-center gap-2">
+              <ImageIcon size={48} class="text-zinc-300 group-hover:text-zinc-400 transition-colors" />
+              <div class="text-sm font-medium">Album Artwork</div>
+              <div class="text-xs opacity-70">Drop image here</div>
             </div>
           )}
         </div>
 
-        <div class="flex flex-col gap-2">
-          <div class="flex flex-col gap-0.5">
-            <label class="text-xs text-gray-600 font-medium">アルバム名</label>
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Album Title</label>
             <input
               type="text"
               value={albumData.albumTitle}
               onInput={(e) => handleAlbumFieldChange('albumTitle', e.currentTarget.value)}
               placeholder="Album Title"
-              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
+              class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
             />
           </div>
 
-          <div class="flex flex-col gap-0.5">
-            <label class="text-xs text-gray-600 font-medium">アルバムアーティスト</label>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Album Artist</label>
             <input
               type="text"
               value={albumData.albumArtist}
               onInput={(e) => handleAlbumFieldChange('albumArtist', e.currentTarget.value)}
               placeholder="Album Artist"
-              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
+              class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
             />
           </div>
 
-          <div class="flex flex-col gap-0.5">
-            <label class="text-xs text-gray-600 font-medium">リリース日</label>
-            <input
-              type="text"
-              value={albumData.releaseDate}
-              onInput={(e) => handleAlbumFieldChange('releaseDate', e.currentTarget.value)}
-              placeholder="2000-01-01"
-              class="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:outline-none focus:border-green-500"
-            />
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Release Date</label>
+            <div class="relative">
+              <input
+                type="text"
+                value={albumData.releaseDate}
+                onInput={(e) => handleAlbumFieldChange('releaseDate', e.currentTarget.value)}
+                placeholder="YYYY-MM-DD"
+                class="w-full pl-9 pr-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
+              />
+              <Calendar size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            </div>
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-gray-600 font-medium">タグ</label>
-            
-            {/* タグ入力フィールド（チップ内蔵） */}
-            <div class="min-h-[2rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-center">
-              {/* タグチップ表示 */}
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Tags</label>
+
+            {/* タグ入力フィールド */}
+            <div class="min-h-[2.5rem] px-2 py-1.5 border border-zinc-300 rounded-md text-sm bg-white focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all flex flex-wrap gap-1.5 items-center">
               {albumData.tags.map((tag, index) => {
                 const chipColor = getChipColor(tag);
                 return (
-                  <div 
+                  <div
                     key={`${tag}-${index}`}
-                    class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                    class="inline-flex items-center pl-2 pr-1 py-0.5 rounded-full text-xs font-medium border border-black/5 shadow-sm"
                     style={{ backgroundColor: chipColor.backgroundColor, color: chipColor.color }}
                   >
                     <span>{tag}</span>
                     <button
                       onClick={() => removeTag(tag)}
-                      class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
+                      class="ml-1 p-0.5 hover:bg-black/10 rounded-full transition-colors"
                     >
-                      ×
+                      <X size={12} />
                     </button>
                   </div>
                 );
               })}
-              
-              {/* 入力フィールド */}
+
               <input
                 type="text"
                 value={albumData.currentTagInput}
                 onInput={(e) => handleTagInput(e.currentTarget.value)}
                 onKeyDown={(e) => handleTagKeyDown(e)}
-                placeholder={albumData.tags.length === 0 ? "タグをカンマまたはエンターで区切って入力" : ""}
-                class="flex-1 min-w-[100px] outline-none bg-transparent text-xs"
+                placeholder={albumData.tags.length === 0 ? "Add tags..." : ""}
+                class="flex-1 min-w-[80px] outline-none bg-transparent text-sm placeholder-zinc-400"
               />
             </div>
           </div>
-
-          {/* <button class="px-3 py-1.5 border border-blue-500 rounded bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors">
-            DLSiteから取得
-          </button> */}
         </div>
       </div>
 
       {/* メインコンテンツ */}
       <div class="flex-1 flex flex-col bg-white">
-        <div class="px-5 py-4 bg-gray-50 border-b border-gray-300 flex items-center justify-between">
+        <div class="px-5 py-3 bg-white border-b border-zinc-200 flex items-center justify-between shrink-0">
           <div class="flex items-center gap-2">
-            <button 
+            <button
               onClick={handleSort}
-              class="px-3 py-1 border border-gray-300 rounded bg-white text-xs hover:bg-gray-50 transition-colors"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
             >
-              ソート
+              <SortAsc size={14} />
+              <span>Sort</span>
             </button>
           </div>
-          
+
           <div class="flex items-center gap-2">
             {/* ヘルプ/ガイドボタン */}
             <button
               onClick={() => { setOnboardingStep(0); setShowOnboarding(true); }}
-              class="px-3 py-1 border border-blue-300 rounded bg-blue-50 text-blue-700 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-600 text-xs font-medium hover:bg-zinc-50 hover:text-zinc-900 transition-all shadow-sm"
             >
-              ❓ ガイド
+              <HelpCircle size={14} />
+              <span>Guide</span>
             </button>
             {/* 一括削除ボタン */}
-            <button 
+            <button
               onClick={handleClearAll}
               disabled={tracks.length === 0}
-              class="px-3 py-1 border border-red-300 rounded bg-red-500 text-white text-xs hover:bg-red-600 hover:border-red-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-red-600 text-xs font-medium hover:bg-red-50 hover:border-red-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-zinc-300"
             >
-              🗑️ すべて削除
+              <Trash2 size={14} />
+              <span>Clear All</span>
             </button>
-            
+
             {/* 出力ボタン */}
-            <button 
+            <button
               onClick={handleExport}
               disabled={tracks.length === 0}
-              class="px-3 py-1 border border-green-300 rounded bg-green-500 text-white text-xs hover:bg-green-600 hover:border-green-400 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-transparent rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
             >
-              📤 出力
+              <Upload size={14} />
+              <span>Export</span>
             </button>
           </div>
         </div>
 
-        <div class="flex-1 overflow-auto">
+        <div class="flex-1 overflow-auto bg-white">
           {tracks.length === 0 && !isProcessing && (
-            <div class="flex items-center justify-center h-64 text-gray-500">
-              <div class="text-center">
-                <div class="text-lg mb-2">🎵</div>
+            <div class="flex items-center justify-center h-full text-zinc-400">
+              <div class="text-center flex flex-col items-center gap-4">
+                <div class="p-4 bg-zinc-50 rounded-full">
+                  <Music size={48} class="text-zinc-300" />
+                </div>
                 <div class="text-sm">
-                  音声ファイルまたはフォルダをここにドロップしてください<br />
-                  <span class="text-xs text-gray-400">
-                      サポートファイル: WAV, MP3, FLAC, M4A<br />
-                    フォルダをドロップすると、サブフォルダも含めて音声ファイルを自動検索します
+                  <span class="font-medium text-zinc-600 block mb-1">Drop audio files or folders here</span>
+                  <span class="text-xs text-zinc-400">
+                    Supports: WAV, MP3, FLAC, M4A<br />
+                    Folders will be scanned recursively
                   </span>
                 </div>
               </div>
             </div>
           )}
-          <table class="w-full table-fixed">
-            <thead class="bg-gray-50 sticky top-0 z-10">
+          <table class="w-full table-fixed divide-y divide-zinc-200">
+            <thead class="bg-zinc-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th class="w-20 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">削除</th>
-                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Disk</th>
-                <th class="w-16 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">Track</th>
-                <th class="w-80 px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">タイトル</th>
-                <th class="px-2 py-2 text-left text-xs text-gray-600 font-semibold border-b-2 border-gray-300">アーティスト</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Del</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Disk</th>
+                <th class="w-16 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Track</th>
+                <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Title</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider">Artists</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="bg-white divide-y divide-zinc-100">
               {tracks.map((track) => (
-                <tr key={track.id} class="hover:bg-gray-50">
-                  <td class="px-2 py-2 border-b border-gray-200">
-                    <button 
+                <tr key={track.id} class="hover:bg-zinc-50 transition-colors group">
+                  <td class="px-4 py-2 align-top pt-3">
+                    <button
                       onClick={() => handleTrackDelete(track.id)}
-                      class="px-2 py-1 border border-red-300 rounded bg-red-50 text-red-600 text-xs hover:bg-red-500 hover:text-white hover:border-red-500 transition-all flex items-center justify-center gap-1 font-medium"
+                      class="p-1.5 border border-transparent rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      title="Delete Track"
                     >
-                      🗑️ 削除
+                      <Trash2 size={14} />
                     </button>
                   </td>
-                  <td class="px-2 py-2 border-b border-gray-200">
+                  <td class="px-4 py-2 align-top pt-3">
                     <input
                       type="text"
                       value={track.diskNumber}
@@ -1367,10 +1388,10 @@ ${dirPath}
                         handleTrackChange(track.id, 'diskNumber', numericValue);
                       }}
                       placeholder="1"
-                      class="w-12 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
+                      class="w-full px-2 py-1 border border-zinc-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center"
                     />
                   </td>
-                  <td class="px-2 py-2 border-b border-gray-200">
+                  <td class="px-4 py-2 align-top pt-3">
                     <input
                       type="text"
                       value={track.trackNumber}
@@ -1379,51 +1400,44 @@ ${dirPath}
                         handleTrackChange(track.id, 'trackNumber', numericValue);
                       }}
                       placeholder="1"
-                      class="w-12 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
+                      class="w-full px-2 py-1 border border-zinc-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center"
                     />
                   </td>
-                  <td class="px-2 py-2 border-b border-gray-200">
+                  <td class="px-4 py-2 align-top pt-3">
                     <textarea
                       value={track.title}
                       onInput={(e) => {
                         handleTrackChange(track.id, 'title', e.currentTarget.value);
-                        // Auto-resize textarea
                         e.currentTarget.style.height = 'auto';
                         e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
                       }}
-                      class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500 resize-none overflow-hidden min-h-[1.5rem]"
+                      class="w-full px-2 py-1.5 border border-zinc-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none overflow-hidden min-h-[2rem] transition-all"
                       rows={1}
-                      style={{
-                        height: 'auto',
-                        minHeight: '1.5rem'
-                      }}
+                      style={{ height: 'auto', minHeight: '2rem' }}
                     />
                   </td>
-                  <td class="px-2 py-2 border-b border-gray-200">
+                  <td class="px-4 py-2 align-top pt-3">
                     <div class="flex items-start gap-2">
-                      {/* アーティスト入力フィールド（チップ内蔵） */}
-                      <div class="flex-1 min-h-[1.75rem] px-2 py-1 border border-gray-300 rounded text-xs bg-white focus-within:border-blue-500 flex flex-wrap gap-1 items-start"
-                           style={{
-                             maxWidth: 'none',
-                             wordBreak: 'break-word'
-                           }}>
-                        {/* アーティストチップ表示 */}
+                      {/* アーティスト入力フィールド */}
+                      <div class="flex-1 min-h-[2rem] px-2 py-1.5 border border-zinc-300 rounded text-xs bg-white focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all flex flex-wrap gap-1.5 items-start"
+                        style={{ maxWidth: 'none', wordBreak: 'break-word' }}>
+                        {/* アーティストチップ */}
                         {track.artists.map((artist, index) => {
                           const chipColor = getChipColor(artist);
                           return (
-                            <div 
+                            <div
                               key={`${artist}-${index}`}
-                              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity group"
-                              style={{ 
-                                backgroundColor: chipColor.backgroundColor, 
+                              class="inline-flex items-center pl-2 pr-1 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity border border-black/5 shadow-sm"
+                              style={{
+                                backgroundColor: chipColor.backgroundColor,
                                 color: chipColor.color,
                                 maxWidth: '100%',
                                 wordBreak: 'break-word'
                               }}
                               onClick={() => copyArtist(artist)}
-                              title={`クリックで「${artist}」をコピー`}
+                              title={`Click to copy "${artist}"`}
                             >
-                              <span style={{ 
+                              <span style={{
                                 wordBreak: 'break-word',
                                 overflowWrap: 'break-word',
                                 whiteSpace: 'normal',
@@ -1434,35 +1448,33 @@ ${dirPath}
                                   e.stopPropagation();
                                   removeArtistTag(track.id, artist);
                                 }}
-                                class="ml-1 text-current hover:bg-black hover:bg-opacity-20 rounded-full w-3 h-3 flex items-center justify-center transition-colors text-xs"
-                                title="削除"
+                                class="ml-1 p-0.5 hover:bg-black/10 rounded-full transition-colors"
                               >
-                                ×
+                                <X size={12} />
                               </button>
                             </div>
                           );
                         })}
-                        
-                        {/* 入力フィールド */}
+
                         <input
                           type="text"
                           value={track.currentArtistInput}
                           onInput={(e) => handleArtistInput(track.id, e.currentTarget.value)}
                           onPaste={(e) => handleArtistPaste(track.id, e)}
                           onKeyDown={(e) => handleArtistKeyDown(track.id, e)}
-                          placeholder={track.artists.length === 0 ? "アーティストをカンマまたはエンターで区切って入力" : ""}
-                          class="flex-1 min-w-[80px] outline-none bg-transparent text-xs"
+                          placeholder={track.artists.length === 0 ? "Add artists..." : ""}
+                          class="flex-1 min-w-[80px] outline-none bg-transparent text-xs placeholder-zinc-400"
                         />
                       </div>
-                      
+
                       {/* 一括コピーボタン */}
                       {track.artists.length > 0 && (
                         <button
                           onClick={() => copyAllArtists(track.artists)}
-                          class="px-2 py-1 border border-blue-300 rounded bg-blue-50 text-blue-600 text-xs hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all flex items-center gap-1 font-medium self-start flex-shrink-0"
-                          title={`全アーティストをコピー: ${track.artists.join('; ')}`}
+                          class="p-1.5 border border-zinc-200 rounded bg-white text-zinc-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all self-start flex-shrink-0"
+                          title={`Copy all artists: ${track.artists.join('; ')}`}
                         >
-                          📋 コピー
+                          <Clipboard size={14} />
                         </button>
                       )}
                     </div>
@@ -1476,53 +1488,56 @@ ${dirPath}
 
       {/* 出力設定ダイアログ */}
       {showExportDialog && (
-        <div class="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
-          <div class="bg-white rounded-lg p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-auto">
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">出力設定</h2>
-            
+        <div class="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
+          <div class="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-auto scale-100 animate-in zoom-in-95 duration-200">
+            <h2 class="text-lg font-semibold mb-4 text-zinc-800 flex items-center gap-2">
+              <Settings size={20} />
+              Export Settings
+            </h2>
+
             {/* 保存先フォルダ */}
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">保存先フォルダ</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Output Folder</label>
               <div class="flex gap-2">
                 <input
                   type="text"
                   value={exportSettings.outputPath}
-                  placeholder="フォルダを選択してください"
+                  placeholder="Select folder..."
                   readOnly
-                  class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50 focus:outline-none"
+                  class="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm bg-zinc-50 focus:outline-none text-zinc-600"
                 />
                 <button
                   onClick={handleSelectOutputFolder}
-                  class="px-3 py-2 border border-blue-300 rounded bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors whitespace-nowrap"
+                  class="px-3 py-2 border border-zinc-300 rounded-md bg-white text-zinc-700 text-sm hover:bg-zinc-50 hover:border-zinc-400 transition-colors whitespace-nowrap flex items-center gap-2"
                 >
-                  📁 選択
+                  <FolderOpen size={16} />
                 </button>
               </div>
             </div>
 
             {/* 同名ファイル処理 */}
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">同名ファイルの処理</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">File Conflict</label>
               <select
                 value={exportSettings.overwriteMode}
-                onChange={(e) => setExportSettings(prev => ({ 
-                  ...prev, 
-                  overwriteMode: e.currentTarget.value as 'overwrite' | 'rename' 
+                onChange={(e) => setExportSettings(prev => ({
+                  ...prev,
+                  overwriteMode: e.currentTarget.value as 'overwrite' | 'rename'
                 }))}
-                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
-                <option value="rename">別名で保存</option>
-                <option value="overwrite">上書き保存</option>
+                <option value="rename">Rename (keep both)</option>
+                <option value="overwrite">Overwrite</option>
               </select>
             </div>
 
             {/* ファイル形式 */}
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">ファイル形式</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Format</label>
               <select
                 value={exportSettings.format}
                 onChange={(e) => handleFormatChange(e.currentTarget.value as ExportSettings['format'])}
-                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
                 <option value="MP3">MP3</option>
                 <option value="M4A">M4A (AAC)</option>
@@ -1531,14 +1546,14 @@ ${dirPath}
 
             {/* 音質設定 */}
             <div class="mb-6">
-              <label class="block text-sm font-medium text-gray-700 mb-2">音質設定</label>
+              <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Quality</label>
               <select
                 value={exportSettings.quality}
-                onChange={(e) => setExportSettings(prev => ({ 
-                  ...prev, 
+                onChange={(e) => setExportSettings(prev => ({
+                  ...prev,
                   quality: e.currentTarget.value as ExportSettings['quality']
                 }))}
-                class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:border-blue-500"
+                class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
                 {getQualityOptions(exportSettings.format).map(option => (
                   <option key={option.value} value={option.value}>
@@ -1549,206 +1564,222 @@ ${dirPath}
             </div>
 
             {/* ボタン */}
-            <div class="flex gap-3 justify-end">
+            <div class="flex gap-3 justify-end pt-2 border-t border-zinc-100">
               <button
                 onClick={() => setShowExportDialog(false)}
-                class="px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
               >
-                キャンセル
+                Cancel
               </button>
               <button
                 onClick={handleActualExport}
                 disabled={!exportSettings.outputPath}
-                class="px-4 py-2 border border-green-300 rounded bg-green-500 text-white text-sm hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:border-gray-300 disabled:cursor-not-allowed"
+                class="px-4 py-2 border border-transparent rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
               >
-                📤 出力実行
+                <Upload size={16} />
+                Export
               </button>
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* 処理中オーバーレイ */}
-      {isProcessing && (convertProgress || processingProgress) && (
-        <div class="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}>
-          <div class="bg-white rounded-lg p-8 w-[500px] max-w-[90vw]">
-            <div class="text-center">
-              {/* スピナー */}
-              <div class="flex justify-center mb-6">
-                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
-              </div>
-              
-              {/* タイトル */}
-              <h2 class="text-xl font-semibold mb-4 text-gray-800">
-                {convertProgress ? '変換処理中...' : 'ファイル読み込み中...'}
-              </h2>
-              
-              {/* 進捗情報 */}
-              {convertProgress ? (
-                <>
-                  {/* プログレスバー */}
-                  <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
-                    <div 
-                      class="bg-blue-600 h-4 rounded-full transition-all duration-300"
-                      style={{ width: `${convertProgress.percent}%` }}
-                    ></div>
-                  </div>
-                  
-                  {/* 進捗テキスト */}
-                  <div class="text-lg font-medium text-gray-700 mb-2">
-                    {completedCount} / {convertProgress.total} ファイル処理済み
-                    <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
-                  </div>
-                  
-                  {/* 現在処理中のファイル */}
-                  <div class="text-sm text-gray-600 mt-4 break-all">
-                    <span class="font-medium">
-                      {convertProgress.status === 'processing' ? '処理中: ' : 
-                       convertProgress.status === 'completed' ? '完了: ' : 'エラー: '}
-                    </span>
-                    <span class="text-gray-800">{convertProgress.currentFile}</span>
-                  </div>
-                </>
-              ) : processingProgress ? (
-                <>
-                  {/* プログレスバー */}
-                  <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
-                    <div 
-                      class="bg-blue-600 h-4 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${completedCount > 0 ? (completedCount / processingProgress.total) * 100 : 0}%` 
-                      }}
-                    ></div>
-                  </div>
-                  
-                  {/* 進捗テキスト */}
-                  <div class="text-lg font-medium text-gray-700 mb-2">
-                    {completedCount} / {processingProgress.total} ファイル処理済み
-                    <span class="ml-2 text-blue-600">
-                      ({completedCount > 0 ? Math.round((completedCount / processingProgress.total) * 100) : 0}%)
-                    </span>
-                  </div>
-                  
-                  {/* 現在処理中のファイル */}
-                  <div class="text-sm text-gray-600 mt-4 break-all">
-                    <span class="font-medium">
-                      {processingProgress.status === 'processing' ? '処理中: ' : 
-                       processingProgress.status === 'completed' ? '完了: ' : 'エラー: '}
-                    </span>
-                    <span class="text-gray-800">{processingProgress.file_path.split('/').pop() || processingProgress.file_path}</span>
-                  </div>
-                </>
-              ) : null}
-              
-              {/* 注意メッセージ */}
-              <div class="mt-6 text-xs text-gray-500">
-                処理が完了するまでお待ちください
+      {
+        isProcessing && (convertProgress || processingProgress) && (
+          <div class="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
+            <div class="bg-white rounded-xl shadow-2xl p-8 w-[500px] max-w-[90vw] scale-100 animate-in zoom-in-95 duration-200">
+              <div class="text-center">
+                {/* スピナー */}
+                <div class="flex justify-center mb-6">
+                  <div class="animate-spin rounded-full h-12 w-12 border-4 border-zinc-200 border-t-blue-600"></div>
+                </div>
+
+                {/* タイトル */}
+                <h2 class="text-xl font-semibold mb-4 text-zinc-800">
+                  {convertProgress ? 'Converting...' : 'Processing Files...'}
+                </h2>
+
+                {/* 進捗情報 */}
+                {convertProgress ? (
+                  <>
+                    {/* プログレスバー */}
+                    <div class="w-full bg-zinc-100 rounded-full h-2 mb-4 overflow-hidden">
+                      <div
+                        class="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${convertProgress.percent}%` }}
+                      ></div>
+                    </div>
+
+                    {/* 進捗テキスト */}
+                    <div class="text-sm font-medium text-zinc-600 mb-2">
+                      {completedCount} / {convertProgress.total} files processed
+                      <span class="ml-2 text-blue-600">({Math.round(convertProgress.percent)}%)</span>
+                    </div>
+
+                    {/* 現在処理中のファイル */}
+                    <div class="text-xs text-zinc-500 mt-4 break-all bg-zinc-50 p-2 rounded border border-zinc-100">
+                      <span class="font-medium mr-1">
+                        {convertProgress.status === 'processing' ? 'Processing: ' :
+                          convertProgress.status === 'completed' ? 'Done: ' : 'Error: '}
+                      </span>
+                      <span class="text-zinc-700">{convertProgress.currentFile}</span>
+                    </div>
+                  </>
+                ) : processingProgress ? (
+                  <>
+                    {/* プログレスバー */}
+                    <div class="w-full bg-zinc-100 rounded-full h-2 mb-4 overflow-hidden">
+                      <div
+                        class="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{
+                          width: `${completedCount > 0 ? (completedCount / processingProgress.total) * 100 : 0}%`
+                        }}
+                      ></div>
+                    </div>
+
+                    {/* 進捗テキスト */}
+                    <div class="text-sm font-medium text-zinc-600 mb-2">
+                      {completedCount} / {processingProgress.total} files processed
+                      <span class="ml-2 text-blue-600">
+                        ({completedCount > 0 ? Math.round((completedCount / processingProgress.total) * 100) : 0}%)
+                      </span>
+                    </div>
+
+                    {/* 現在処理中のファイル */}
+                    <div class="text-xs text-zinc-500 mt-4 break-all bg-zinc-50 p-2 rounded border border-zinc-100">
+                      <span class="font-medium mr-1">
+                        {processingProgress.status === 'processing' ? 'Processing: ' :
+                          processingProgress.status === 'completed' ? 'Done: ' : 'Error: '}
+                      </span>
+                      <span class="text-zinc-700">{processingProgress.file_path.split('/').pop() || processingProgress.file_path}</span>
+                    </div>
+                  </>
+                ) : null}
+
+                {/* 注意メッセージ */}
+                <div class="mt-6 text-xs text-zinc-400">
+                  Please wait while we process your files...
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* オンボーディングオーバーレイ */}
-      {showOnboarding && (
-        <div class="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.55)' }}>
-          <div class="bg-white rounded-xl shadow-xl w-[640px] max-w-[92vw] p-6 relative">
-            <button
-              onClick={() => closeOnboarding(true)}
-              class="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
-              aria-label="閉じる"
-              title="閉じる"
-            >
-              ×
-            </button>
-
-            <div class="mb-4">
-              <div class="text-xs text-gray-500 mb-1">ステップ {onboardingStep + 1} / {onboardingSteps.length}</div>
-              <h2 class="text-xl font-semibold text-gray-800">{onboardingSteps[onboardingStep].title}</h2>
-            </div>
-
-            <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-              {onboardingSteps[onboardingStep].desc}
-            </div>
-
-            {/* 補助ビジュアル */}
-            <div class="mt-5 bg-gray-50 border border-gray-200 rounded-lg p-4 text-xs text-gray-600">
-              {onboardingStep === 0 && (
-                <>
-                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
-                  <ul class="list-disc pl-5 space-y-1">
-                    <li>フォルダをドロップすると自動で音声と画像をスキャンします</li>
-                    <li>カバー画像はファイル名に cover/album を含むものを優先して選択します</li>
-                  </ul>
-                </>
-              )}
-              {onboardingStep === 1 && (
-                <>
-                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
-                  <ul class="list-disc pl-5 space-y-1">
-                    <li>アーティスト/タグはカンマ・セミコロンで区切って一括入力できます</li>
-                    <li>タイトル欄は長文でも自動で高さ調整されます</li>
-                  </ul>
-                </>
-              )}
-              {onboardingStep === 2 && (
-                <>
-                  <div class="font-medium text-gray-700 mb-1">ヒント</div>
-                  <ul class="list-disc pl-5 space-y-1">
-                    <li>同名ファイルは「上書き」または「別名で保存」を選べます</li>
-                    <li>変換中は進捗と現在処理中のファイルが表示されます</li>
-                  </ul>
-                </>
-              )}
-            </div>
-
-            {/* ドットインジケータ */}
-            <div class="mt-5 flex items-center justify-center gap-2">
-              {onboardingSteps.map((_, idx) => (
-                <div
-                  key={idx}
-                  class={`w-2.5 h-2.5 rounded-full ${idx === onboardingStep ? 'bg-blue-600' : 'bg-gray-300'}`}
-                ></div>
-              ))}
-            </div>
-
-            {/* アクション */}
-            <div class="mt-6 flex items-center justify-between">
+      {
+        showOnboarding && (
+          <div class="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
+            <div class="bg-white rounded-xl shadow-2xl w-[640px] max-w-[92vw] p-8 relative scale-100 animate-in zoom-in-95 duration-200">
               <button
                 onClick={() => closeOnboarding(true)}
-                class="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
+                class="absolute right-4 top-4 text-zinc-400 hover:text-zinc-600 transition-colors p-1 hover:bg-zinc-100 rounded-full"
+                aria-label="Close"
+                title="Close"
               >
-                スキップ
+                <X size={20} />
               </button>
-              <div class="flex items-center gap-2">
-                <button
-                  onClick={() => setOnboardingStep(Math.max(0, onboardingStep - 1))}
-                  disabled={onboardingStep === 0}
-                  class="px-3 py-1.5 border border-gray-300 rounded text-xs text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  戻る
-                </button>
-                {onboardingStep < onboardingSteps.length - 1 ? (
-                  <button
-                    onClick={() => setOnboardingStep(Math.min(onboardingSteps.length - 1, onboardingStep + 1))}
-                    class="px-3 py-1.5 border border-blue-300 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    次へ
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => closeOnboarding(true)}
-                    class="px-3 py-1.5 border border-green-300 rounded text-xs bg-green-600 text-white hover:bg-green-700"
-                  >
-                    はじめる
-                  </button>
+
+              <div class="mb-6">
+                <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">Step {onboardingStep + 1} of {onboardingSteps.length}</div>
+                <h2 class="text-2xl font-bold text-zinc-800">{onboardingSteps[onboardingStep].title}</h2>
+              </div>
+
+              <div class="text-base text-zinc-600 leading-relaxed whitespace-pre-line mb-8">
+                {onboardingSteps[onboardingStep].desc}
+              </div>
+
+              {/* 補助ビジュアル */}
+              <div class="bg-zinc-50 border border-zinc-200 rounded-lg p-5 text-sm text-zinc-600 mb-8">
+                {onboardingStep === 0 && (
+                  <>
+                    <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+                      <AlertCircle size={16} class="text-blue-500" />
+                      Tips
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
+                      <li>Folders will be scanned recursively for audio and images.</li>
+                      <li>Cover art is auto-detected from files named "cover" or "album".</li>
+                    </ul>
+                  </>
                 )}
+                {onboardingStep === 1 && (
+                  <>
+                    <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+                      <AlertCircle size={16} class="text-blue-500" />
+                      Tips
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
+                      <li>Use commas or semicolons to add multiple artists or tags at once.</li>
+                      <li>The title field auto-expands for long titles.</li>
+                    </ul>
+                  </>
+                )}
+                {onboardingStep === 2 && (
+                  <>
+                    <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+                      <AlertCircle size={16} class="text-blue-500" />
+                      Tips
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
+                      <li>You can choose to Overwrite or Rename duplicate files.</li>
+                      <li>Progress is shown in real-time during conversion.</li>
+                    </ul>
+                  </>
+                )}
+              </div>
+
+              {/* ドットインジケータ */}
+              <div class="flex items-center justify-center gap-2 mb-8">
+                {onboardingSteps.map((_, idx) => (
+                  <div
+                    key={idx}
+                    class={`w-2.5 h-2.5 rounded-full transition-all ${idx === onboardingStep ? 'bg-blue-600 scale-110' : 'bg-zinc-200'}`}
+                  ></div>
+                ))}
+              </div>
+
+              {/* アクション */}
+              <div class="flex items-center justify-between pt-4 border-t border-zinc-100">
+                <button
+                  onClick={() => closeOnboarding(true)}
+                  class="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
+                >
+                  Skip
+                </button>
+                <div class="flex items-center gap-3">
+                  <button
+                    onClick={() => setOnboardingStep(Math.max(0, onboardingStep - 1))}
+                    disabled={onboardingStep === 0}
+                    class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    Back
+                  </button>
+                  {onboardingStep < onboardingSteps.length - 1 ? (
+                    <button
+                      onClick={() => setOnboardingStep(Math.min(onboardingSteps.length - 1, onboardingStep + 1))}
+                      class="px-4 py-2 border border-transparent rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-all"
+                    >
+                      Next
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => closeOnboarding(true)}
+                      class="px-4 py-2 border border-transparent rounded-md text-sm bg-green-600 text-white hover:bg-green-700 shadow-sm transition-all flex items-center gap-2"
+                    >
+                      <Check size={16} />
+                      Get Started
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
