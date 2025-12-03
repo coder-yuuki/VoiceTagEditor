@@ -187,6 +187,31 @@ function App() {
     }));
   };
 
+  // リリース日入力を簡易サニタイズ
+  const sanitizeDateInput = (value: string): string => {
+    return value.replace(/[^0-9-]/g, '').slice(0, 10);
+  };
+
+  // ゼロ埋めした数値文字列を返す
+  const padNumber = (value: string): string => {
+    if (!value) return '';
+    const numeric = value.replace(/[^0-9]/g, '');
+    return numeric ? numeric.padStart(2, '0') : '';
+  };
+
+  // 配列をトリム＆重複排除（順序維持）
+  const trimAndDedup = (items: string[]) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of items) {
+      const item = raw.trim();
+      if (!item || seen.has(item)) continue;
+      seen.add(item);
+      result.push(item);
+    }
+    return result;
+  };
+
   // 数字変換関数（"02" → "2", 非数字 → ""）
   const normalizeNumberString = (value: string): string => {
     // 数字以外の文字を除去
@@ -394,7 +419,7 @@ function App() {
             diskNumber: normalizeNumberString(metadata.disk_number || '1'),
             trackNumber: normalizeNumberString(metadata.track_number || '1'),
             title: metadata.title || getFileNameWithoutExtension(result.file_path),
-            artists: metadata.artist ? metadata.artist.split(';').map(a => a.trim()).filter(a => a.length > 0) : [],
+            artists: metadata.artist ? trimAndDedup(metadata.artist.split(';')) : [],
             currentArtistInput: '',
             filePath: result.file_path
           };
@@ -405,6 +430,48 @@ function App() {
 
       // トラックリストに追加
       if (newTracks.length > 0) {
+        // Disk/Track で重複がある場合は警告
+        const duplicateEntries: string[] = [];
+        const comboKey = (t: Track) => {
+          const disk = t.diskNumber ? parseInt(t.diskNumber, 10) : NaN;
+          const track = t.trackNumber ? parseInt(t.trackNumber, 10) : NaN;
+          return `${isNaN(disk) ? '' : disk}-${isNaN(track) ? '' : track}`;
+        };
+        const existingCombos = new Map<string, Track>(
+          tracks
+            .filter(t => t.diskNumber && t.trackNumber)
+            .map(t => [comboKey(t), t])
+        );
+        const seenNewCombos = new Map<string, Track>();
+
+        for (const track of newTracks) {
+          if (!track.diskNumber || !track.trackNumber) continue;
+          const key = comboKey(track);
+          if (existingCombos.has(key)) {
+            const existing = existingCombos.get(key)!;
+            duplicateEntries.push(`Disk ${track.diskNumber} / Track ${track.trackNumber}: 「${track.title}」 ↔ 既存「${existing.title}」`);
+          } else if (seenNewCombos.has(key)) {
+            const other = seenNewCombos.get(key)!;
+            duplicateEntries.push(`Disk ${track.diskNumber} / Track ${track.trackNumber}: 「${track.title}」 ↔ 新規「${other.title}」`);
+          } else {
+            seenNewCombos.set(key, track);
+          }
+        }
+
+        if (duplicateEntries.length > 0) {
+          const proceed = await confirm(
+            `ディスク/トラック番号が重複しています。\n\n${duplicateEntries.join('\n')}\n\n追加を続行しますか？`,
+            {
+              title: '重複の確認',
+              kind: 'warning'
+            }
+          );
+
+          if (!proceed) {
+            return;
+          }
+        }
+
         setTracks(prev => [...prev, ...newTracks]);
       }
 
@@ -666,13 +733,14 @@ ${dirPath}
   const handleTagInput = (value: string) => {
     if (value.includes(',') || value.includes('，')) {
       const parts = value.split(/[,，]/);
-      const newTags = parts.slice(0, -1).map(tag => tag.trim()).filter(tag => tag.length > 0);
+      const newTags = trimAndDedup(parts.slice(0, -1));
       const remainingInput = parts[parts.length - 1].trim();
 
       if (newTags.length > 0) {
+        const merged = trimAndDedup([...albumData.tags, ...newTags]);
         setAlbumData({
           ...albumData,
-          tags: [...albumData.tags, ...newTags],
+          tags: merged,
           currentTagInput: remainingInput
         });
       }
@@ -697,11 +765,12 @@ ${dirPath}
       if (newArtists.length > 0) {
         const track = tracks.find(t => t.id === trackId);
         if (track) {
+          const merged = trimAndDedup([...track.artists, ...newArtists]);
           setTracks(tracks.map(t =>
             t.id === trackId
               ? {
                 ...t,
-                artists: [...t.artists, ...newArtists],
+                artists: merged,
                 currentArtistInput: remainingInput
               }
               : t
@@ -824,11 +893,12 @@ ${dirPath}
       }
 
       // アーティストを追加して入力フィールドをクリア
+      const merged = trimAndDedup([...track.artists, newArtist]);
       setTracks(tracks.map(t =>
         t.id === trackId
           ? {
             ...t,
-            artists: [...t.artists, newArtist],
+            artists: merged,
             currentArtistInput: ''
           }
           : t
@@ -852,10 +922,11 @@ ${dirPath}
         return;
       }
 
-      // タグを追加して入力フィールドをクリア
+      // タグを追加（順序維持しつつ重複排除）して入力フィールドをクリア
+      const merged = trimAndDedup([...albumData.tags, newTag]);
       setAlbumData({
         ...albumData,
-        tags: [...albumData.tags, newTag],
+        tags: merged,
         currentTagInput: ''
       });
       console.log(`Added tag: ${newTag}`);
@@ -942,6 +1013,147 @@ ${dirPath}
       if (selected && typeof selected === 'string') {
         setExportSettings(prev => ({ ...prev, outputPath: selected }));
       }
+    } catch (error) {
+      console.error('フォルダ選択エラー:', error);
+    }
+  };
+
+  // アートワーク選択
+  const handleSelectArtworkFile = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        title: 'アルバムアートワークを選択',
+        filters: [
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
+        ]
+      });
+
+      if (selected) {
+        const artworkPath = Array.isArray(selected) ? selected[0] : selected;
+        setAlbumData(prev => ({
+          ...prev,
+          albumArtwork: convertFileSrc(artworkPath),
+          albumArtworkPath: artworkPath,
+          albumArtworkCachePath: undefined
+        }));
+      }
+    } catch (error) {
+      console.error('アートワーク選択エラー:', error);
+    }
+  };
+
+  const handleClearAlbumArtwork = () => {
+    setAlbumData(prev => ({
+      ...prev,
+      albumArtwork: null,
+      albumArtworkPath: undefined,
+      albumArtworkCachePath: undefined
+    }));
+  };
+
+  const getArtworkSourceLabel = () => {
+    if (albumData.albumArtworkPath) return 'フォルダの画像';
+    if (albumData.albumArtworkCachePath) return '埋め込みアート';
+    if (albumData.albumArtwork) return '手動追加';
+    return '';
+  };
+
+  // ディレクトリ経由の読み込み（ドロップと同等の挙動）
+  const processSelectedDirectories = async (directoryPaths: string[]) => {
+    if (!directoryPaths || directoryPaths.length === 0) return;
+
+    let directoryAudioFiles: string[] = [];
+    let directoryImageFiles: string[] = [];
+
+    for (const dirPath of directoryPaths) {
+      try {
+        const files = await invoke<string[]>('scan_directory_for_audio_files', {
+          directoryPath: dirPath
+        });
+        directoryAudioFiles.push(...files);
+      } catch (error) {
+        console.error(`Error scanning directory ${dirPath}:`, error);
+        await confirm(`ディレクトリの処理中にエラーが発生しました:
+${dirPath}
+
+エラー: ${error}`, {
+          title: 'ディレクトリスキャンエラー',
+          kind: 'error'
+        });
+      }
+
+      try {
+        const imgs = await invoke<string[]>('scan_directory_for_image_files', {
+          directoryPath: dirPath
+        });
+        directoryImageFiles.push(...imgs);
+      } catch (imgErr) {
+        console.error(`Error scanning images in ${dirPath}:`, imgErr);
+      }
+    }
+
+    if (directoryAudioFiles.length === 0 && directoryImageFiles.length === 0) {
+      await confirm('選択されたフォルダに音声/画像ファイルが見つかりませんでした。', {
+        title: 'ファイルなし',
+        kind: 'info'
+      });
+      return;
+    }
+
+    if (directoryAudioFiles.length > 0) {
+      await processAudioFiles(directoryAudioFiles, directoryImageFiles.length > 0);
+    }
+
+    if (directoryImageFiles.length > 0) {
+      const score = (p: string) => {
+        const name = getFileNameWithoutExtension(p).toLowerCase();
+        if (name.includes('cover')) return 0;
+        if (name.includes('album')) return 1;
+        return 2;
+      };
+      const sorted = [...directoryImageFiles].sort((a, b) => score(a) - score(b));
+      const bestImage = sorted[0];
+      const artworkUrl = convertFileSrc(bestImage);
+      setAlbumData(prev => ({
+        ...prev,
+        albumArtwork: artworkUrl,
+        albumArtworkPath: bestImage,
+        albumArtworkCachePath: undefined
+      }));
+    }
+  };
+
+  // ファイル/フォルダ選択ダイアログ
+  const handlePickAudioFiles = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        title: '音声ファイルを選択',
+        filters: [
+          { name: 'Audio', extensions: ['wav', 'mp3', 'flac', 'm4a'] }
+        ]
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length > 0) {
+        await processAudioFiles(paths, false);
+      }
+    } catch (error) {
+      console.error('ファイル選択エラー:', error);
+    }
+  };
+
+  const handlePickDirectories = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: true,
+        title: 'フォルダを選択'
+      });
+      if (!selected) return;
+      const dirs = Array.isArray(selected) ? selected : [selected];
+      await processSelectedDirectories(dirs);
     } catch (error) {
       console.error('フォルダ選択エラー:', error);
     }
@@ -1191,9 +1403,9 @@ ${dirPath}
           releaseDate: '',
           tags: [],
           currentTagInput: '',
-          albumArtwork: '',
-          albumArtworkPath: '',
-          albumArtworkCachePath: ''
+          albumArtwork: null,
+          albumArtworkPath: undefined,
+          albumArtworkCachePath: undefined
         });
         console.log("All data cleared successfully");
       }
@@ -1220,6 +1432,32 @@ ${dirPath}
               <div class="text-xs opacity-70">画像をドロップ</div>
             </div>
           )}
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="text-xs text-zinc-500 flex items-center gap-2">
+            {albumData.albumArtwork && (
+              <span class="px-2 py-1 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200">
+                {getArtworkSourceLabel() || 'アートワーク設定済み'}
+              </span>
+            )}
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              onClick={handleSelectArtworkFile}
+              class="px-2.5 py-1 border border-zinc-300 rounded-md text-xs text-zinc-700 bg-white hover:bg-zinc-50 hover:border-zinc-400 transition-colors inline-flex items-center gap-1.5"
+            >
+              <ImageIcon size={14} />
+              <span>画像を選択</span>
+            </button>
+            <button
+              onClick={handleClearAlbumArtwork}
+              disabled={!albumData.albumArtwork}
+              class="px-2.5 py-1 border border-zinc-300 rounded-md text-xs text-zinc-600 bg-white hover:bg-zinc-50 hover:border-zinc-400 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <X size={12} />
+              <span>クリア</span>
+            </button>
+          </div>
         </div>
 
         <div class="flex flex-col gap-3">
@@ -1251,7 +1489,7 @@ ${dirPath}
               <input
                 type="text"
                 value={albumData.releaseDate}
-                onInput={(e) => handleAlbumFieldChange('releaseDate', e.currentTarget.value)}
+                onInput={(e) => handleAlbumFieldChange('releaseDate', sanitizeDateInput(e.currentTarget.value))}
                 placeholder="YYYY-MM-DD"
                 class="w-full pl-9 pr-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder-zinc-400"
               />
@@ -1306,6 +1544,20 @@ ${dirPath}
             >
               <SortAsc size={14} />
               <span>ソート</span>
+            </button>
+            <button
+              onClick={handlePickAudioFiles}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+            >
+              <Upload size={14} />
+              <span>ファイル追加</span>
+            </button>
+            <button
+              onClick={handlePickDirectories}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+            >
+              <FolderOpen size={14} />
+              <span>フォルダ追加</span>
             </button>
           </div>
 
@@ -1387,6 +1639,9 @@ ${dirPath}
                         const numericValue = handleNumberInput(e.currentTarget.value);
                         handleTrackChange(track.id, 'diskNumber', numericValue);
                       }}
+                      onBlur={(e) => {
+                        handleTrackChange(track.id, 'diskNumber', padNumber(e.currentTarget.value));
+                      }}
                       placeholder="1"
                       class="w-full px-2 py-1 border border-zinc-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center"
                     />
@@ -1398,6 +1653,9 @@ ${dirPath}
                       onInput={(e) => {
                         const numericValue = handleNumberInput(e.currentTarget.value);
                         handleTrackChange(track.id, 'trackNumber', numericValue);
+                      }}
+                      onBlur={(e) => {
+                        handleTrackChange(track.id, 'trackNumber', padNumber(e.currentTarget.value));
                       }}
                       placeholder="1"
                       class="w-full px-2 py-1 border border-zinc-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-center"
