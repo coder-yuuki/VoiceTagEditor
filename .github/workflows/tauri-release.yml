@@ -52,6 +52,12 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
+      - name: Set macOS signing identity
+        if: matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY != '-'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: printf '%s\n' "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
       - name: Build and release via Tauri Action
         uses: tauri-apps/tauri-action@v0
         env:
@@ -59,7 +65,6 @@ jobs:
           # macOS signing / notarization (set these secrets to ship a Gatekeeper-friendly app)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
