@@ -19,12 +19,17 @@
       }
     ],
     "security": {
-      "csp": {
-        "img-src": "'self' asset: http://asset.localhost blob: data:"
-      },
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost; media-src 'self' asset: http://asset.localhost blob: data:;",
+      "devCsp": "default-src 'self'; img-src 'self' asset: http://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; connect-src ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420; media-src 'self' asset: http://asset.localhost blob: data:;",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": {
+          "allow": ["**"],
+          "deny": [
+            "$HOME/.ssh/**",
+            "$HOME/.gnupg/**"
+          ]
+        }
       }
     },
     "withGlobalTauri": true

@@ -33,7 +33,7 @@
 - **フロントエンド**: Preact + TypeScript + Vite
 - **バックエンド**: Rust (Tauri v2)
 - **パッケージマネージャー**: pnpm
-- **対応OS**: Windows、macOS、Linux
+- **対応OS**: Windows、macOS（Linuxは現状ソースからビルドして利用）
 
 ## 必要要件 / 注意事項
 
@@ -46,7 +46,7 @@
 ## 開発環境セットアップ
 
 ### 必要な環境
-- Node.js と pnpm
+- Node.js (>= 18) と pnpm
 - Rust toolchain
 - Tauri CLI
 - FFmpeg（音声処理用）
@@ -75,6 +75,7 @@ pnpm build
 
 # 型チェック
 pnpm tsc
+```
 
 ## リリース
 
@@ -97,15 +98,17 @@ pnpm tsc
 
 サードパーティのライセンスは `THIRD-PARTY-NOTICES.md` を参照してください。
 
+プライバシーポリシーは `PRIVACY.md` を参照してください。
+
 ## ダウンロード
 
 - 最新版は GitHub Releases から入手できます: https://github.com/iLickeyPro/VoiceTagEditor/releases/latest
+- GitHub Actions の自動リリース対象OS: macOS / Windows（Linuxは現状未配布）
 - macOSでの初回起動確認（公証・署名の検証）:
   - 署名・公証なしビルドの場合、初回はGatekeeperでブロックされることがあります。
   - 開く手順（2通り）
     - Finderで右クリック → 開く → ダイアログで「開く」
     - もしくは隔離属性を外す: `xattr -dr com.apple.quarantine /Applications/voicetageditor.app`
-```
 
 ## プロジェクト構造
 
