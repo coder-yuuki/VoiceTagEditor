@@ -75,6 +75,7 @@ pnpm build
 
 # 型チェック
 pnpm tsc
+```
 
 ## リリース
 
@@ -105,7 +106,6 @@ pnpm tsc
   - 開く手順（2通り）
     - Finderで右クリック → 開く → ダイアログで「開く」
     - もしくは隔離属性を外す: `xattr -dr com.apple.quarantine /Applications/voicetageditor.app`
-```
 
 ## プロジェクト構造
 
