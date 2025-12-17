@@ -3,16 +3,23 @@
 このプロジェクトでは以下のサードパーティソフトウェアを利用しています。各ライセンスの正確な条文は公式配布物に従います。
 
 - Tauri (tauri, tauri-build, @tauri-apps/cli, @tauri-apps/api, tauri plugins)
-  - License: MIT
+  - License: MIT OR Apache-2.0
   - Site: https://tauri.app/
 
 - Preact
   - License: MIT
   - Site: https://preactjs.com/
 
+- lucide-preact
+  - License: ISC
+  - Site: https://lucide.dev/
+
 - Vite
   - License: MIT
   - Site: https://vitejs.dev/
+
+- @preact/preset-vite
+  - License: MIT
 
 - TypeScript
   - License: Apache-2.0
@@ -21,6 +28,17 @@
 - Tailwind CSS
   - License: MIT
   - Site: https://tailwindcss.com/
+
+- PostCSS
+  - License: MIT
+  - Site: https://postcss.org/
+
+- Autoprefixer
+  - License: MIT
+  - Site: https://github.com/postcss/autoprefixer
+
+- @tailwindcss/postcss
+  - License: MIT
 
 - Tokio
   - License: MIT OR Apache-2.0
@@ -36,7 +54,13 @@
 - which (Rust)
   - License: MIT
 
-- その他、各に記載の依存はそれぞれのライセンスに従います。
+- futures (Rust)
+  - License: MIT OR Apache-2.0
+
+- walkdir (Rust)
+  - License: Unlicense/MIT
+
+- その他、各所に記載の依存関係はそれぞれのライセンスに従います。
 
 注意事項:
 - 本アプリはOSにインストール済みのFFmpegを外部プロセスとして利用します（同梱しません）。
