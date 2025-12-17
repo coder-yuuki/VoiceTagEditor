@@ -98,6 +98,8 @@ pnpm tsc
 
 サードパーティのライセンスは `THIRD-PARTY-NOTICES.md` を参照してください。
 
+プライバシーポリシーは `PRIVACY.md` を参照してください。
+
 ## ダウンロード
 
 - 最新版は GitHub Releases から入手できます: https://github.com/iLickeyPro/VoiceTagEditor/releases/latest
