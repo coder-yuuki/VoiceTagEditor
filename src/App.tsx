@@ -22,7 +22,8 @@ import {
   AlertCircle,
   Info,
   FolderOpen,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-preact';
 import "./App.css";
 
@@ -157,6 +158,9 @@ function App() {
   const [appName, setAppName] = useState<string>('VoiceTagEditor');
   const [appVersion, setAppVersion] = useState<string>('');
 
+  // Updater
+  const [isUpdateChecking, setIsUpdateChecking] = useState<boolean>(false);
+
   useEffect(() => {
     (async () => {
       try { setAppName(await getName()); } catch { }
@@ -164,39 +168,68 @@ function App() {
     })();
   }, []);
 
+  const checkForUpdates = useCallback(async (showNoUpdateDialog: boolean) => {
+    if (isUpdateChecking) return;
+    setIsUpdateChecking(true);
+    try {
+      const update = await check();
+      if (!update) {
+        if (showNoUpdateDialog) {
+          await confirm('現在のバージョンは最新です。', {
+            title: 'アップデート',
+            kind: 'info'
+          });
+        }
+        return;
+      }
+
+      const releaseNote = (update.body && String(update.body).trim().length > 0)
+        ? `\n\n変更内容:\n${String(update.body).trim()}`
+        : '';
+
+      const ok = await confirm(
+        `新しいバージョンが利用可能です。\n\n現在: v${update.currentVersion}\n最新: v${update.version}${releaseNote}\n\nアップデートしますか？`,
+        { title: 'アップデート', kind: 'info' }
+      );
+      if (!ok) return;
+
+      await update.downloadAndInstall((event) => {
+        // ダイアログ中に進捗を更新できないため、ログに出す（必要なら後でUI化）
+        if ('data' in event) {
+          console.log('[updater]', event.event, event.data);
+        } else {
+          console.log('[updater]', event.event);
+        }
+      });
+
+      // インストール後は再起動が必要な場合があります（OS/インストーラ依存）
+      await confirm('アップデートを適用しました。アプリを再起動してください。', {
+        title: 'アップデート完了',
+        kind: 'info'
+      });
+    } catch (e) {
+      // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
+      console.warn('アップデート確認に失敗:', e);
+      if (showNoUpdateDialog) {
+        await confirm(`アップデート確認に失敗しました。\n\n${String(e)}`, {
+          title: 'アップデート',
+          kind: 'warning'
+        });
+      }
+    } finally {
+      setIsUpdateChecking(false);
+    }
+  }, [isUpdateChecking]);
+
   // 起動時にアップデート確認（更新があるときだけ案内）
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      try {
-        const update = await check();
-        if (!update || cancelled) return;
-
-        const ok = await confirm(
-          `新しいバージョンが利用可能です。\n\n現在: v${update.currentVersion}\n最新: v${update.version}\n\nアップデートしますか？`,
-          { title: 'アップデート', kind: 'info' }
-        );
-
-        if (!ok || cancelled) return;
-
-        await update.downloadAndInstall();
-
-        // インストール後は再起動が必要な場合があります（OS/インストーラ依存）
-        await confirm('アップデートを適用しました。アプリを再起動してください。', {
-          title: 'アップデート完了',
-          kind: 'info'
-        });
-      } catch (e) {
-        // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
-        console.warn('アップデート確認に失敗:', e);
-      }
+      if (cancelled) return;
+      await checkForUpdates(false);
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => { cancelled = true; };
+  }, [checkForUpdates]);
 
   useEffect(() => {
     try {
@@ -1615,6 +1648,16 @@ ${dirPath}
           </div>
 
           <div class="flex items-center gap-2">
+            {/* 更新確認ボタン */}
+            <button
+              onClick={() => { void checkForUpdates(true); }}
+              disabled={isUpdateChecking}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-600 text-xs font-medium hover:bg-zinc-50 hover:text-zinc-900 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              title="更新を確認"
+            >
+              <RefreshCw size={14} />
+              <span>更新確認</span>
+            </button>
             {/* About ボタン */}
             <button
               onClick={() => { setAboutTab('overview'); setShowAbout(true); }}
