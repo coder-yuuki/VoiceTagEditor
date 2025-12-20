@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { check } from "@tauri-apps/plugin-updater";
 import licenseText from "../LICENSE?raw";
 import thirdPartyNoticesText from "../THIRD-PARTY-NOTICES.md?raw";
 import privacyPolicyText from "../PRIVACY.md?raw";
@@ -161,6 +162,40 @@ function App() {
       try { setAppName(await getName()); } catch { }
       try { setAppVersion(await getVersion()); } catch { }
     })();
+  }, []);
+
+  // 起動時にアップデート確認（更新があるときだけ案内）
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const update = await check();
+        if (!update || cancelled) return;
+
+        const ok = await confirm(
+          `新しいバージョンが利用可能です。\n\n現在: v${update.currentVersion}\n最新: v${update.version}\n\nアップデートしますか？`,
+          { title: 'アップデート', kind: 'info' }
+        );
+
+        if (!ok || cancelled) return;
+
+        await update.downloadAndInstall();
+
+        // インストール後は再起動が必要な場合があります（OS/インストーラ依存）
+        await confirm('アップデートを適用しました。アプリを再起動してください。', {
+          title: 'アップデート完了',
+          kind: 'info'
+        });
+      } catch (e) {
+        // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
+        console.warn('アップデート確認に失敗:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
