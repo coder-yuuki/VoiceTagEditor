@@ -33,6 +33,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             system_check::check_ffmpeg,
+            system_check::ensure_ffmpeg_installed,
             metadata::extract_metadata,
             processing::process_audio_files,
             fs_scan::scan_directory_for_audio_files,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "preact/hooks";
+import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getName, getVersion } from "@tauri-apps/api/app";
@@ -88,6 +88,20 @@ interface ConvertError {
   error_message: string;
 }
 
+interface FfmpegInstallResult {
+  available: boolean;
+  installed: boolean;
+  message: string;
+  package_manager?: string | null;
+}
+
+interface FfmpegInstallProgress {
+  stream: string;
+  message: string;
+}
+
+type FfmpegSetupStatus = 'idle' | 'checking' | 'ready' | 'failed';
+
 interface AlbumData {
   albumArtwork: string | null;
   albumArtworkPath?: string; // アルバムアートのファイルパスを追加
@@ -160,12 +174,180 @@ function App() {
 
   // Updater
   const [isUpdateChecking, setIsUpdateChecking] = useState<boolean>(false);
+  const [ffmpegSetup, setFfmpegSetup] = useState<{ status: FfmpegSetupStatus; message: string }>({
+    status: 'idle',
+    message: ''
+  });
+  const [ffmpegInstallLog, setFfmpegInstallLog] = useState<FfmpegInstallProgress[]>([]);
+  const ffmpegSetupPromise = useRef<Promise<FfmpegInstallResult> | null>(null);
+  const ffmpegReadyRef = useRef(false);
+  const shouldRunFfmpegAfterOnboardingRef = useRef(false);
+  const isFfmpegReady = ffmpegSetup.status === 'ready';
 
   useEffect(() => {
     (async () => {
       try { setAppName(await getName()); } catch { }
       try { setAppVersion(await getVersion()); } catch { }
     })();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupListener = async () => {
+      try {
+        unlisten = await listen<FfmpegInstallProgress>('ffmpeg-install-progress', (event) => {
+          const message = event.payload.message.replace(/\s+/g, ' ').trim();
+          if (!message) return;
+
+          const progress = {
+            stream: event.payload.stream,
+            message
+          };
+
+          setFfmpegInstallLog(prev => [...prev.slice(-5), progress]);
+          setFfmpegSetup(prev => {
+            if (prev.status === 'ready') return prev;
+            return {
+              status: 'checking',
+              message
+            };
+          });
+        });
+      } catch (error) {
+        console.error('FFmpegインストール進捗リスナーの設定に失敗:', error);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+  const ensureFfmpegReady = useCallback(async (showFailureDialog: boolean = true): Promise<boolean> => {
+    if (ffmpegReadyRef.current) {
+      return true;
+    }
+
+    if (ffmpegSetupPromise.current) {
+      setFfmpegSetup({
+        status: 'checking',
+        message: 'FFmpegを自動インストールしています...'
+      });
+      try {
+        const result = await ffmpegSetupPromise.current;
+        ffmpegReadyRef.current = result.available;
+        setFfmpegSetup({
+          status: 'ready',
+          message: result.message
+        });
+        return result.available;
+      } catch (error) {
+        ffmpegReadyRef.current = false;
+        ffmpegSetupPromise.current = null;
+        const message = String(error);
+        setFfmpegSetup({
+          status: 'failed',
+          message
+        });
+        if (showFailureDialog) {
+          await confirm(`FFmpegの自動セットアップに失敗しました。\n\n${message}`, {
+            title: 'FFmpegセットアップ',
+            kind: 'warning'
+          });
+        }
+        return false;
+      }
+    }
+
+    setFfmpegSetup({
+      status: 'checking',
+      message: 'FFmpegを確認しています...'
+    });
+    setFfmpegInstallLog([]);
+
+    try {
+      const alreadyAvailable = await invoke<boolean>('check_ffmpeg');
+      if (alreadyAvailable) {
+        ffmpegReadyRef.current = true;
+        setFfmpegInstallLog([]);
+        setFfmpegSetup({
+          status: 'ready',
+          message: 'FFmpegは利用可能です。'
+        });
+        return true;
+      }
+    } catch (error) {
+      ffmpegReadyRef.current = false;
+      const message = String(error);
+      setFfmpegSetup({
+        status: 'failed',
+        message
+      });
+      if (showFailureDialog) {
+        await confirm(`FFmpegの確認に失敗しました。\n\n${message}`, {
+          title: 'FFmpegセットアップ',
+          kind: 'warning'
+        });
+      }
+      return false;
+    }
+
+    const shouldInstall = await confirm(
+      '音声ファイルの処理にはFFmpegが必要です。\n\nFFmpeg / ffprobe が見つからないため、自動インストールを実行しますか？',
+      {
+        title: 'FFmpegをインストールしますか？',
+        kind: 'warning'
+      }
+    );
+
+    if (!shouldInstall) {
+      ffmpegReadyRef.current = false;
+      setFfmpegSetup({
+        status: 'failed',
+        message: 'FFmpegがインストールされていません。音声ファイルの処理にはFFmpegが必要です。'
+      });
+      return false;
+    }
+
+    setFfmpegSetup({
+      status: 'checking',
+      message: 'FFmpegを自動インストールしています...'
+    });
+    setFfmpegInstallLog([{ stream: 'status', message: 'FFmpegの自動インストールを開始します。' }]);
+
+    if (!ffmpegSetupPromise.current) {
+      ffmpegSetupPromise.current = invoke<FfmpegInstallResult>('ensure_ffmpeg_installed');
+    }
+
+    try {
+      const result = await ffmpegSetupPromise.current;
+      ffmpegReadyRef.current = result.available;
+      setFfmpegSetup({
+        status: 'ready',
+        message: result.message
+      });
+      return result.available;
+    } catch (error) {
+      ffmpegReadyRef.current = false;
+      ffmpegSetupPromise.current = null;
+      const message = String(error);
+      setFfmpegSetup({
+        status: 'failed',
+        message
+      });
+      if (showFailureDialog) {
+        await confirm(`FFmpegの自動セットアップに失敗しました。\n\n${message}`, {
+          title: 'FFmpegセットアップ',
+          kind: 'warning'
+        });
+      }
+      return false;
+    }
   }, []);
 
   const checkForUpdates = useCallback(async (showNoUpdateDialog: boolean) => {
@@ -235,18 +417,26 @@ function App() {
     try {
       const seen = localStorage.getItem('vte_onboarding_seen_v1');
       if (!seen) {
+        shouldRunFfmpegAfterOnboardingRef.current = true;
         setShowOnboarding(true);
+        return;
       }
+      void ensureFfmpegReady(true);
     } catch (e) {
       // localStorage 不可環境でもアプリは継続
+      void ensureFfmpegReady(true);
     }
-  }, []);
+  }, [ensureFfmpegReady]);
 
   const closeOnboarding = (markSeen: boolean = true) => {
     if (markSeen) {
       try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch { }
     }
     setShowOnboarding(false);
+    if (shouldRunFfmpegAfterOnboardingRef.current) {
+      shouldRunFfmpegAfterOnboardingRef.current = false;
+      void ensureFfmpegReady(true);
+    }
   };
 
   // フォーマットに応じた音質設定のオプションを取得
@@ -399,13 +589,9 @@ function App() {
       // 完了数をリセット
       setCompletedCount(0);
 
-      // FFmpegのチェック
-      const ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
+      // FFmpegの確認と自動セットアップ
+      const ffmpegAvailable = await ensureFfmpegReady(true);
       if (!ffmpegAvailable) {
-        await confirm('オーディオファイルの処理にはFFmpegが必要です。\n\nFFmpegをインストールしてください。\nhttps://ffmpeg.org/download.html', {
-          title: 'FFmpegがインストールされていません',
-          kind: 'warning'
-        });
         return;
       }
 
@@ -1332,6 +1518,11 @@ ${dirPath}
         return;
       }
 
+      const ffmpegAvailable = await ensureFfmpegReady(true);
+      if (!ffmpegAvailable) {
+        return;
+      }
+
       setShowExportDialog(false);
       setIsProcessing(true);
 
@@ -1633,14 +1824,16 @@ ${dirPath}
             </button>
             <button
               onClick={handlePickAudioFiles}
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+              disabled={!isFfmpegReady}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Upload size={14} />
               <span>ファイル追加</span>
             </button>
             <button
               onClick={handlePickDirectories}
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+              disabled={!isFfmpegReady}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FolderOpen size={14} />
               <span>フォルダ追加</span>
@@ -1687,7 +1880,7 @@ ${dirPath}
             {/* 出力ボタン */}
             <button
               onClick={handleExport}
-              disabled={tracks.length === 0}
+              disabled={tracks.length === 0 || !isFfmpegReady}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-transparent rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
             >
               <Upload size={14} />
@@ -1695,6 +1888,48 @@ ${dirPath}
             </button>
           </div>
         </div>
+
+        {ffmpegSetup.status !== 'idle' && ffmpegSetup.status !== 'ready' && (
+          <div class={`px-5 py-2 border-b text-xs flex items-start justify-between gap-3 ${ffmpegSetup.status === 'failed'
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-blue-50 border-blue-100 text-blue-800'
+            }`}>
+            <div class="flex items-start gap-2 min-w-0 flex-1">
+              <div class="pt-0.5">
+                {ffmpegSetup.status === 'checking' ? (
+                  <RefreshCw size={14} class="animate-spin shrink-0" />
+                ) : (
+                  <AlertCircle size={14} class="shrink-0" />
+                )}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="truncate font-medium">{ffmpegSetup.message}</div>
+                {ffmpegInstallLog.length > 0 && (
+                  <div class="mt-1 space-y-0.5">
+                    {ffmpegInstallLog.slice(-3).map((entry, index) => (
+                      <div
+                        key={`${entry.stream}-${index}-${entry.message}`}
+                        class={`truncate font-mono text-[11px] leading-4 ${entry.stream === 'stderr' ? 'text-amber-900' : 'opacity-80'}`}
+                      >
+                        <span class="mr-1 opacity-70">{entry.stream === 'stderr' ? '!' : '>'}</span>
+                        {entry.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {ffmpegSetup.status === 'failed' && (
+              <button
+                onClick={() => { void ensureFfmpegReady(true); }}
+                class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 border border-amber-300 rounded-md bg-white text-amber-800 hover:bg-amber-100 transition-colors"
+              >
+                <RefreshCw size={13} />
+                <span>再試行</span>
+              </button>
+            )}
+          </div>
+        )}
 
         <div class="flex-1 overflow-auto bg-white">
           {tracks.length === 0 && !isProcessing && (

@@ -37,10 +37,11 @@
 
 ## 必要要件 / 注意事項
 
-- 本アプリは音声の変換・埋め込み処理で FFmpeg を使用します。FFmpeg は同梱していないため、各OSにインストールしてください。
-  - macOS (Homebrew): `brew install ffmpeg`
-  - Windows: winget / Chocolatey などでインストール
-  - Linux: ディストリビューションのパッケージからインストール
+- 本アプリは音声の変換・埋め込み処理で FFmpeg を使用します。FFmpeg は同梱していません。
+  - 起動時に FFmpeg / ffprobe が見つからない場合は、利用可能なパッケージマネージャー経由で自動インストールを試みます。
+  - macOS: Homebrew が必要です。
+  - Windows: winget / Chocolatey / Scoop のいずれかを利用します。
+  - Linux: ディストリビューションのパッケージマネージャーを利用します（権限設定によっては手動インストールが必要です）。
 - OPUS のカバーアートは METADATA_BLOCK_PICTURE で埋め込みます。再生ソフトによっては表示されない場合があります。
 
 ## 開発環境セットアップ
