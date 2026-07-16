@@ -5,15 +5,18 @@ import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { check } from "@tauri-apps/plugin-updater";
 import { AboutDialog, type AboutTab } from './components/AboutDialog';
+import { AppDialog, type AppDialogOptions } from './components/AppDialog';
 import { AppToolbar } from './components/AppToolbar';
 import { ExportDialog } from './components/ExportDialog';
 import { FfmpegBanner } from './components/FfmpegBanner';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ProcessingOverlay } from './components/ProcessingOverlay';
 import { Sidebar } from './components/Sidebar';
+import { StepIndicator } from './components/StepIndicator';
 import { TrackTable } from './components/TrackTable';
 import type {
   AlbumData,
+  AppMode,
   AudioFileResult,
   ConvertProgress,
   ConvertResult,
@@ -28,12 +31,21 @@ import type {
 } from './types';
 import "./App.css";
 
+const MODE_STORAGE_KEY = 'vte_display_mode_v1';
+
 function App() {
+  const [mode, setMode] = useState<AppMode>(() => {
+    try {
+      return localStorage.getItem(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple';
+    } catch {
+      return 'simple';
+    }
+  });
   const [albumData, setAlbumData] = useState<AlbumData>({
     albumArtwork: null,
     albumTitle: "",
     albumArtist: "",
-    releaseDate: "2000-01-01",
+    releaseDate: "",
     tags: [],
     currentTagInput: "",
   });
@@ -62,15 +74,15 @@ function App() {
   const onboardingSteps: OnboardingStep[] = [
     {
       title: 'ファイルを読み込む',
-      desc: '音声ファイルやフォルダを画面にドラッグ＆ドロップしてください。フォルダの中身もまとめて読み込めます。'
+      desc: '「ファイルを選ぶ」または「フォルダを選ぶ」から音声を追加します。画面へドラッグ＆ドロップしても追加できます。'
     },
     {
       title: '情報を編集する',
-      desc: '曲名やアーティスト名などを編集できます。アーティスト名やタグは、カンマ(,)で区切ると複数登録できます。'
+      desc: '読み込まれた曲名やアーティスト名を確認し、必要なところだけ書き換えます。'
     },
     {
       title: '保存する',
-      desc: '右上の「出力」ボタンから、MP3などの形式を選んで保存できます。'
+      desc: '右上の「保存」ボタンを押して保存先を選びます。かんたんモードでは、おすすめ設定が自動で使われます。'
     }
   ];
 
@@ -79,9 +91,12 @@ function App() {
   const [aboutTab, setAboutTab] = useState<AboutTab>('overview');
   const [appName, setAppName] = useState<string>('VoiceTagEditor');
   const [appVersion, setAppVersion] = useState<string>('');
+  const [appDialog, setAppDialog] = useState<AppDialogOptions | null>(null);
+  const appDialogResolver = useRef<((confirmed: boolean) => void) | null>(null);
 
   // Updater
   const [isUpdateChecking, setIsUpdateChecking] = useState<boolean>(false);
+  const isUpdateCheckingRef = useRef(false);
   const [ffmpegSetup, setFfmpegSetup] = useState<FfmpegSetupState>({
     status: 'idle',
     message: ''
@@ -91,12 +106,37 @@ function App() {
   const ffmpegReadyRef = useRef(false);
   const isFfmpegReady = ffmpegSetup.status === 'ready';
 
+  const showAppDialog = useCallback((options: AppDialogOptions): Promise<boolean> => {
+    if (appDialogResolver.current) {
+      appDialogResolver.current(false);
+    }
+    setAppDialog(options);
+    return new Promise<boolean>((resolve) => {
+      appDialogResolver.current = resolve;
+    });
+  }, []);
+
+  const handleAppDialogResult = (confirmed: boolean) => {
+    const resolver = appDialogResolver.current;
+    appDialogResolver.current = null;
+    setAppDialog(null);
+    resolver?.(confirmed);
+  };
+
   useEffect(() => {
     (async () => {
       try { setAppName(await getName()); } catch { }
       try { setAppVersion(await getVersion()); } catch { }
     })();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, mode);
+    } catch {
+      // localStorageが使えない場合も、現在の起動中は選択したモードを維持する
+    }
+  }, [mode]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -210,7 +250,8 @@ function App() {
   }, []);
 
   const checkForUpdates = useCallback(async (showNoUpdateDialog: boolean) => {
-    if (isUpdateChecking) return;
+    if (isUpdateCheckingRef.current) return;
+    isUpdateCheckingRef.current = true;
     setIsUpdateChecking(true);
     try {
       const update = await check();
@@ -252,15 +293,19 @@ function App() {
       // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
       console.warn('アップデート確認に失敗:', e);
       if (showNoUpdateDialog) {
-        await confirm(`アップデート確認に失敗しました。\n\n${String(e)}`, {
-          title: 'アップデート',
-          kind: 'warning'
+        await showAppDialog({
+          title: '更新を確認できませんでした',
+          message: '新しいバージョンがあるか確認できませんでした。アプリはそのまま使えます。',
+          guidance: 'インターネット接続を確認して、時間を置いてからもう一度お試しください。',
+          technicalDetail: String(e),
+          tone: 'warning',
         });
       }
     } finally {
+      isUpdateCheckingRef.current = false;
       setIsUpdateChecking(false);
     }
-  }, [isUpdateChecking]);
+  }, [showAppDialog]);
 
   // 起動時にアップデート確認（更新があるときだけ案内）
   useEffect(() => {
@@ -276,21 +321,7 @@ function App() {
     void ensureFfmpegReady();
   }, [ensureFfmpegReady]);
 
-  useEffect(() => {
-    try {
-      const seen = localStorage.getItem('vte_onboarding_seen_v1');
-      if (!seen) {
-        setShowOnboarding(true);
-      }
-    } catch {
-      // localStorage 不可環境でもアプリは継続
-    }
-  }, []);
-
-  const closeOnboarding = (markSeen: boolean = true) => {
-    if (markSeen) {
-      try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch { }
-    }
+  const closeOnboarding = () => {
     setShowOnboarding(false);
   };
 
@@ -316,11 +347,6 @@ function App() {
       format: newFormat,
       quality: 'high' // デフォルトに戻す
     }));
-  };
-
-  // リリース日入力を簡易サニタイズ
-  const sanitizeDateInput = (value: string): string => {
-    return value.replace(/[^0-9-]/g, '').slice(0, 10);
   };
 
   // ゼロ埋めした数値文字列を返す
@@ -435,8 +461,15 @@ function App() {
     } catch (error) {
       console.error('オーディオファイルの処理エラー:', error);
       setIsProcessing(false);
+      await showAppDialog({
+        title: '音声を追加できませんでした',
+        message: '選んだ音声を一覧へ追加できませんでした。',
+        guidance: '同じ音声をすでに読み込んでいないか確認し、もう一度お試しください。',
+        technicalDetail: String(error),
+        tone: 'error',
+      });
     }
-  }, []);
+  }, [showAppDialog]);
 
   // 実際のファイル処理を行う関数
   const processNewFiles = async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
@@ -461,10 +494,12 @@ function App() {
       let albumArtData = '';
       let allTags: string[] = [];
       let hasAlbumInfo = false;
+      const readErrors: Array<{ filePath: string; detail: string }> = [];
 
       for (const result of results) {
         if (result.error) {
           console.error(`ファイル ${result.file_path} の処理エラー: ${result.error}`);
+          readErrors.push({ filePath: result.file_path, detail: result.error });
           continue;
         }
 
@@ -544,7 +579,7 @@ function App() {
           const newTrack: Track = {
             id: generateTrackId(),
             diskNumber: normalizeNumberString(metadata.disk_number || '1'),
-            trackNumber: normalizeNumberString(metadata.track_number || '1'),
+            trackNumber: metadata.track_number ? normalizeNumberString(metadata.track_number) : '',
             title: metadata.title || getFileNameWithoutExtension(result.file_path),
             artists: metadata.artist ? trimAndDedup(metadata.artist.split(';')) : [],
             currentArtistInput: '',
@@ -557,49 +592,38 @@ function App() {
 
       // トラックリストに追加
       if (newTracks.length > 0) {
-        // Disk/Track で重複がある場合は警告
-        const duplicateEntries: string[] = [];
-        const comboKey = (t: Track) => {
-          const disk = t.diskNumber ? parseInt(t.diskNumber, 10) : NaN;
-          const track = t.trackNumber ? parseInt(t.trackNumber, 10) : NaN;
-          return `${isNaN(disk) ? '' : disk}-${isNaN(track) ? '' : track}`;
-        };
-        const existingCombos = new Map<string, Track>(
-          tracks
-            .filter(t => t.diskNumber && t.trackNumber)
-            .map(t => [comboKey(t), t])
-        );
-        const seenNewCombos = new Map<string, Track>();
-
-        for (const track of newTracks) {
-          if (!track.diskNumber || !track.trackNumber) continue;
-          const key = comboKey(track);
-          if (existingCombos.has(key)) {
-            const existing = existingCombos.get(key)!;
-            duplicateEntries.push(`Disk ${track.diskNumber} / Track ${track.trackNumber}: 「${track.title}」 ↔ 既存「${existing.title}」`);
-          } else if (seenNewCombos.has(key)) {
-            const other = seenNewCombos.get(key)!;
-            duplicateEntries.push(`Disk ${track.diskNumber} / Track ${track.trackNumber}: 「${track.title}」 ↔ 新規「${other.title}」`);
-          } else {
-            seenNewCombos.set(key, track);
+        setTracks(prev => {
+          const nextTrackByDisk = new Map<number, number>();
+          for (const track of prev) {
+            const diskNumber = Number.parseInt(track.diskNumber, 10) || 1;
+            const trackNumber = Number.parseInt(track.trackNumber, 10) || 0;
+            nextTrackByDisk.set(
+              diskNumber,
+              Math.max(nextTrackByDisk.get(diskNumber) ?? 1, trackNumber + 1),
+            );
           }
-        }
 
-        if (duplicateEntries.length > 0) {
-          const proceed = await confirm(
-            `ディスク/トラック番号が重複しています。\n\n${duplicateEntries.join('\n')}\n\n追加を続行しますか？`,
-            {
-              title: '重複の確認',
-              kind: 'warning'
+          const numberedTracks = newTracks.map((track) => {
+            const diskNumber = Number.parseInt(track.diskNumber, 10) || 1;
+            if (track.trackNumber) {
+              const trackNumber = Number.parseInt(track.trackNumber, 10) || 0;
+              nextTrackByDisk.set(
+                diskNumber,
+                Math.max(nextTrackByDisk.get(diskNumber) ?? 1, trackNumber + 1),
+              );
+              return track;
             }
-          );
+            const nextTrackNumber = nextTrackByDisk.get(diskNumber) ?? 1;
+            const numberedTrack = {
+              ...track,
+              trackNumber: String(nextTrackNumber),
+            };
+            nextTrackByDisk.set(diskNumber, nextTrackNumber + 1);
+            return numberedTrack;
+          });
 
-          if (!proceed) {
-            return;
-          }
-        }
-
-        setTracks(prev => [...prev, ...newTracks]);
+          return [...prev, ...numberedTracks];
+        });
       }
 
       // 収集したタグをアルバムデータに追加
@@ -617,11 +641,29 @@ function App() {
         });
       }
 
+      if (readErrors.length > 0) {
+        const fileNames = readErrors
+          .map(({ filePath }) => filePath.split(/[\\/]/).pop() || filePath)
+          .join('\n');
+        await showAppDialog({
+          title: '一部の音声を読み込めませんでした',
+          message: `${readErrors.length}件の音声を読み込めませんでした。\n\n${fileNames}`,
+          guidance: 'ファイルがほかのアプリで開かれていないか、対応形式かを確認してから追加し直してください。',
+          technicalDetail: readErrors
+            .map(({ filePath, detail }) => `${filePath}\n${detail}`)
+            .join('\n\n'),
+          tone: 'warning',
+        });
+      }
+
     } catch (error) {
       console.error('オーディオファイルの処理エラー:', error);
-      await confirm(`オーディオファイルの処理中にエラーが発生しました。\n\nエラー: ${error}`, {
-        title: 'エラー',
-        kind: 'error'
+      await showAppDialog({
+        title: '音声を読み込めませんでした',
+        message: '選んだ音声を読み込んでいる途中で問題が起きました。',
+        guidance: 'ファイルを開いているほかのアプリを閉じてから、もう一度お試しください。',
+        technicalDetail: String(error),
+        tone: 'error',
       });
     } finally {
       setIsProcessing(false);
@@ -732,12 +774,12 @@ function App() {
                 }
               } catch (error) {
                 console.error(`Error scanning directory ${dirPath}:`, error);
-                await confirm(`ディレクトリの処理中にエラーが発生しました:
-${dirPath}
-
-エラー: ${error}`, {
-                  title: 'ディレクトリスキャンエラー',
-                  kind: 'error'
+                await showAppDialog({
+                  title: 'フォルダを読み込めませんでした',
+                  message: 'ドロップしたフォルダの中を確認できませんでした。',
+                  guidance: 'フォルダへのアクセス権があるか確認して、もう一度お試しください。',
+                  technicalDetail: `${dirPath}\n\n${String(error)}`,
+                  tone: 'error',
                 });
               }
             }
@@ -1096,13 +1138,14 @@ ${dirPath}
       return;
     }
 
-    const confirmMessage = `「${track.title}」を削除しますか？
-この操作は取り消せません。`;
+    const confirmMessage = `「${track.title}」を一覧から外しますか？
+
+パソコンにある元の音声ファイルは削除されません。`;
     console.log("Showing confirm dialog:", confirmMessage);
 
     try {
       const userConfirmed = await confirm(confirmMessage, {
-        title: "トラック削除の確認",
+        title: "一覧から外す",
         kind: "warning"
       });
       console.log("User confirmed:", userConfirmed);
@@ -1125,6 +1168,14 @@ ${dirPath}
     if (tracks.length === 0) {
       return; // データがない場合は何もしない
     }
+    if (mode === 'simple') {
+      setExportSettings(prev => ({
+        ...prev,
+        overwriteMode: 'rename',
+        format: 'MP3',
+        quality: 'high',
+      }));
+    }
     setShowExportDialog(true);
   };
 
@@ -1142,6 +1193,13 @@ ${dirPath}
       }
     } catch (error) {
       console.error('フォルダ選択エラー:', error);
+      await showAppDialog({
+        title: '保存先を選べませんでした',
+        message: '保存先フォルダを開けませんでした。',
+        guidance: 'もう一度「選ぶ」を押し、書き込みできるフォルダを選んでください。',
+        technicalDetail: String(error),
+        tone: 'error',
+      });
     }
   };
 
@@ -1167,6 +1225,13 @@ ${dirPath}
       }
     } catch (error) {
       console.error('アートワーク選択エラー:', error);
+      await showAppDialog({
+        title: '画像を選べませんでした',
+        message: 'カバー画像を開けませんでした。',
+        guidance: 'PNG、JPG、JPEG、WebP形式の画像を選び直してください。',
+        technicalDetail: String(error),
+        tone: 'error',
+      });
     }
   };
 
@@ -1181,8 +1246,10 @@ ${dirPath}
 
   const getArtworkSourceLabel = () => {
     if (albumData.albumArtworkPath) return 'フォルダの画像';
-    if (albumData.albumArtworkCachePath) return '埋め込みアート';
-    if (albumData.albumArtwork) return '手動追加';
+    if (albumData.albumArtworkCachePath) {
+      return mode === 'simple' ? '音声に含まれていた画像' : '埋め込みアート';
+    }
+    if (albumData.albumArtwork) return mode === 'simple' ? '選んだ画像' : '手動追加';
     return '';
   };
 
@@ -1201,12 +1268,12 @@ ${dirPath}
         directoryAudioFiles.push(...files);
       } catch (error) {
         console.error(`Error scanning directory ${dirPath}:`, error);
-        await confirm(`ディレクトリの処理中にエラーが発生しました:
-${dirPath}
-
-エラー: ${error}`, {
-          title: 'ディレクトリスキャンエラー',
-          kind: 'error'
+        await showAppDialog({
+          title: 'フォルダを読み込めませんでした',
+          message: '選んだフォルダの中を確認できませんでした。',
+          guidance: 'フォルダへのアクセス権があるか確認して、もう一度お試しください。',
+          technicalDetail: `${dirPath}\n\n${String(error)}`,
+          tone: 'error',
         });
       }
 
@@ -1268,6 +1335,13 @@ ${dirPath}
       }
     } catch (error) {
       console.error('ファイル選択エラー:', error);
+      await showAppDialog({
+        title: '音声ファイルを選べませんでした',
+        message: 'ファイル選択画面を開けませんでした。',
+        guidance: '少し待ってから、もう一度お試しください。',
+        technicalDetail: String(error),
+        tone: 'error',
+      });
     }
   };
 
@@ -1283,6 +1357,13 @@ ${dirPath}
       await processSelectedDirectories(dirs);
     } catch (error) {
       console.error('フォルダ選択エラー:', error);
+      await showAppDialog({
+        title: 'フォルダを選べませんでした',
+        message: 'フォルダ選択画面を開けませんでした。',
+        guidance: '少し待ってから、もう一度お試しください。',
+        technicalDetail: String(error),
+        tone: 'error',
+      });
     }
   };
 
@@ -1364,11 +1445,22 @@ ${dirPath}
   // 実際の出力処理
   const handleActualExport = async () => {
     try {
+      const effectiveExportSettings: ExportSettings = mode === 'simple'
+        ? {
+          ...exportSettings,
+          overwriteMode: 'rename',
+          format: 'MP3',
+          quality: 'high',
+        }
+        : exportSettings;
+
       // バリデーション
-      if (!exportSettings.outputPath) {
-        await confirm('出力先フォルダを選択してください。', {
-          title: '入力エラー',
-          kind: 'warning'
+      if (!effectiveExportSettings.outputPath) {
+        await showAppDialog({
+          title: '保存先を選んでください',
+          message: '音声を保存するフォルダがまだ選ばれていません。',
+          guidance: '「選ぶ」ボタンから保存先フォルダを選んでください。',
+          tone: 'warning',
         });
         return;
       }
@@ -1403,10 +1495,10 @@ ${dirPath}
 
       // 出力設定を変換用の形式に変換
       const convertOutputSettings = {
-        output_path: exportSettings.outputPath,
-        format: exportSettings.format,
-        quality: convertQuality(exportSettings.format, exportSettings.quality),
-        overwrite_mode: exportSettings.overwriteMode,
+        output_path: effectiveExportSettings.outputPath,
+        format: effectiveExportSettings.format,
+        quality: convertQuality(effectiveExportSettings.format, effectiveExportSettings.quality),
+        overwrite_mode: effectiveExportSettings.overwriteMode,
       };
 
       try {
@@ -1428,22 +1520,33 @@ ${dirPath}
           // エラーがあった場合
           if (result.failed_files.length > 0) {
             const errorDetails = result.failed_files
-              .map(f => `\n• ${f.source_path.split('/').pop()}\n  エラー: ${f.error_message}`)
-              .join('');
+              .map(f => {
+                const fileName = f.source_path.split(/[\\/]/).pop() || f.source_path;
+                return `${fileName}\n${f.error_message}`;
+              })
+              .join('\n\n');
+            const failedNames = result.failed_files
+              .map(f => f.source_path.split(/[\\/]/).pop() || f.source_path)
+              .join('\n');
 
-            const retryMessage = `変換が完了しましたが、${result.failed_files.length}ファイルでエラーが発生しました。\n\n成功: ${result.converted_files.length}ファイル\n失敗: ${result.failed_files.length}ファイル${errorDetails}\n\n失敗したファイルを再試行しますか？`;
-
-            const shouldRetry = await confirm(retryMessage, {
-              title: '変換完了（一部エラー）',
-              kind: 'warning'
+            const shouldRetry = await showAppDialog({
+              title: '一部の音声を保存できませんでした',
+              message: `保存できた音声：${result.converted_files.length}件\n保存できなかった音声：${result.failed_files.length}件\n\n${failedNames}`,
+              guidance: '保存先に空き容量があるか、元の音声がほかのアプリで開かれていないか確認してください。',
+              technicalDetail: errorDetails,
+              confirmLabel: 'もう一度試す',
+              cancelLabel: '今回は終了',
+              tone: 'warning',
             });
 
             if (shouldRetry) {
               retryCount++;
               if (retryCount > maxRetries) {
-                await confirm(`最大再試行回数（${maxRetries}回）に達しました。`, {
-                  title: '再試行制限',
-                  kind: 'info'
+                await showAppDialog({
+                  title: '繰り返し保存できませんでした',
+                  message: `${maxRetries}回試しましたが、保存できない音声が残っています。`,
+                  guidance: '元の音声と保存先を確認してから、アプリの一覧に戻ってもう一度保存してください。',
+                  tone: 'warning',
                 });
                 break;
               }
@@ -1456,7 +1559,7 @@ ${dirPath}
                   source_path: failedFile.source_path,
                   disk_number: originalTrack?.diskNumber || '1',
                   track_number: originalTrack?.trackNumber || '1',
-                  title: originalTrack?.title || 'Unknown',
+                  title: originalTrack?.title || 'タイトル不明',
                   artists: originalTrack?.artists || [],
                 };
               });
@@ -1470,9 +1573,11 @@ ${dirPath}
             }
           } else {
             // すべて成功した場合
-            await confirm(`変換が完了しました！\n\n成功: ${allConvertedFiles.length}ファイル`, {
-              title: '変換完了',
-              kind: 'info'
+            await showAppDialog({
+              title: '保存が完了しました',
+              message: `${allConvertedFiles.length}件の音声を保存しました。\n保存した音声が最後まで正しく読み取れることも確認済みです。`,
+              confirmLabel: '完了',
+              tone: 'success',
             });
             break;
           }
@@ -1483,11 +1588,12 @@ ${dirPath}
         setIsProcessing(false);
         setConvertProgress(null);
 
-        await confirm(`変換処理中にエラーが発生しました。
-
-エラー: ${invokeError}`, {
-          title: 'エラー',
-          kind: 'error'
+        await showAppDialog({
+          title: '音声を保存できませんでした',
+          message: '保存処理を続けられない問題が起きました。',
+          guidance: '保存先の空き容量とアクセス権を確認して、もう一度お試しください。',
+          technicalDetail: String(invokeError),
+          tone: 'error',
         });
       }
 
@@ -1496,11 +1602,12 @@ ${dirPath}
       setIsProcessing(false);
       setConvertProgress(null);
 
-      await confirm(`出力処理中にエラーが発生しました。
-
-エラー: ${error}`, {
-        title: 'エラー',
-        kind: 'error'
+      await showAppDialog({
+        title: '保存を開始できませんでした',
+        message: '保存の準備中に問題が起きました。',
+        guidance: '保存先を選び直して、もう一度お試しください。',
+        technicalDetail: String(error),
+        tone: 'error',
       });
     }
   };
@@ -1511,18 +1618,23 @@ ${dirPath}
       return; // データがない場合は何もしない
     }
 
-    const confirmMessage = `すべてのデータを削除しますか？
+    const confirmMessage = mode === 'simple'
+      ? `読み込んだ内容をすべて消しますか？
+
+音声の一覧、作品全体の情報、カバー画像が画面から消えます。
+パソコンにある元の音声ファイルは削除されません。`
+      : `すべての編集内容を削除しますか？
 
 この操作により以下がリセットされます：
 • すべてのトラック
 • アルバム情報
 • アルバムアートワーク
 
-この操作は取り消せません。`;
+元の音声ファイルは削除されません。`;
 
     try {
       const userConfirmed = await confirm(confirmMessage, {
-        title: "全データ削除の確認",
+        title: "読み込んだ内容を消す",
         kind: "warning"
       });
 
@@ -1548,9 +1660,10 @@ ${dirPath}
 
 
   return (
-    <div class="flex h-screen bg-gray-100">
+    <div class="flex h-screen min-w-[980px] bg-zinc-100">
       {/* サイドバー */}
       <Sidebar
+        mode={mode}
         albumData={albumData}
         artworkSourceLabel={getArtworkSourceLabel()}
         getChipColor={getChipColor}
@@ -1560,15 +1673,16 @@ ${dirPath}
         onTagInput={handleTagInput}
         onTagKeyDown={handleTagKeyDown}
         onRemoveTag={removeTag}
-        sanitizeDateInput={sanitizeDateInput}
       />
 
       {/* メインコンテンツ */}
-      <div class="flex-1 flex flex-col bg-white">
+      <main class="flex min-w-0 flex-1 flex-col bg-white">
         <AppToolbar
+          mode={mode}
           hasTracks={tracks.length > 0}
           isFfmpegReady={isFfmpegReady}
           isUpdateChecking={isUpdateChecking}
+          onModeChange={setMode}
           onSort={handleSort}
           onPickAudioFiles={handlePickAudioFiles}
           onPickDirectories={handlePickDirectories}
@@ -1579,16 +1693,25 @@ ${dirPath}
           onExport={handleExport}
         />
 
+        {mode === 'simple' && (
+          <StepIndicator currentStep={showExportDialog || convertProgress ? 3 : tracks.length > 0 ? 2 : 1} />
+        )}
+
         <FfmpegBanner
           setup={ffmpegSetup}
           installLog={ffmpegInstallLog}
+          showTechnicalDetails={mode === 'advanced'}
           onRetry={() => { void ensureFfmpegReady(); }}
         />
 
         <TrackTable
+          mode={mode}
           tracks={tracks}
           isProcessing={isProcessing}
+          isFfmpegReady={isFfmpegReady}
           getChipColor={getChipColor}
+          onPickAudioFiles={handlePickAudioFiles}
+          onPickDirectories={handlePickDirectories}
           onTrackDelete={handleTrackDelete}
           onTrackChange={handleTrackChange}
           onNumberInput={handleNumberInput}
@@ -1600,10 +1723,11 @@ ${dirPath}
           onRemoveArtist={removeArtistTag}
           onCopyAllArtists={copyAllArtists}
         />
-      </div>
+      </main>
 
       {/* 出力設定ダイアログ */}
       <ExportDialog
+        mode={mode}
         isOpen={showExportDialog}
         settings={exportSettings}
         qualityOptions={getQualityOptions(exportSettings.format)}
@@ -1616,6 +1740,7 @@ ${dirPath}
 
       {/* About / Legal ダイアログ */}
       <AboutDialog
+        mode={mode}
         isOpen={showAbout}
         activeTab={aboutTab}
         appName={appName}
@@ -1638,9 +1763,15 @@ ${dirPath}
         steps={onboardingSteps}
         currentStep={onboardingStep}
         onStepChange={setOnboardingStep}
-        onClose={() => closeOnboarding(true)}
+        onClose={closeOnboarding}
       />
-    </div >
+
+      <AppDialog
+        options={appDialog}
+        mode={mode}
+        onResult={handleAppDialogResult}
+      />
+    </div>
   );
 }
 

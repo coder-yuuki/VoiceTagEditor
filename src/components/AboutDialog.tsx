@@ -3,10 +3,12 @@ import { X } from 'lucide-preact';
 import licenseText from '../../LICENSE?raw';
 import thirdPartyNoticesText from '../../THIRD-PARTY-NOTICES.md?raw';
 import privacyPolicyText from '../../PRIVACY.md?raw';
+import type { AppMode } from '../types';
 
 export type AboutTab = 'overview' | 'license' | 'thirdParty' | 'privacy';
 
 interface AboutDialogProps {
+  mode: AppMode;
   isOpen: boolean;
   activeTab: AboutTab;
   appName: string;
@@ -16,6 +18,7 @@ interface AboutDialogProps {
 }
 
 export function AboutDialog({
+  mode,
   isOpen,
   activeTab,
   appName,
@@ -94,8 +97,12 @@ export function AboutDialog({
               </div>
 
               <div class="text-xs text-zinc-600 leading-relaxed">
-                本アプリはローカル環境で動作し、音声ファイルの解析・変換には OS にインストール済みの FFmpeg を利用します。
-                データの外部送信は行いません（詳細は「プライバシー」タブを参照してください）。
+                <p>
+                  {mode === 'simple'
+                    ? '本アプリはパソコンの中だけで動作します。音声を扱うために必要な機能は、初回にアプリが自動で準備します。'
+                    : '本アプリはローカル環境で動作し、音声ファイルの解析・変換には OS にインストール済みの FFmpeg を利用します。'}
+                </p>
+                <p class="mt-1">データの外部送信は行いません（詳細は「プライバシー」タブを参照してください）。</p>
               </div>
             </div>
           )}

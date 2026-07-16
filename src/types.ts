@@ -111,3 +111,5 @@ export interface ChipColor {
   backgroundColor: string;
   color: string;
 }
+
+export type AppMode = 'simple' | 'advanced';

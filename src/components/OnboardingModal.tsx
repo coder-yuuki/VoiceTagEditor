@@ -26,15 +26,15 @@ export function OnboardingModal({
         <button
           onClick={onClose}
           class="absolute right-4 top-4 text-zinc-400 hover:text-zinc-600 transition-colors p-1 hover:bg-zinc-100 rounded-full"
-          aria-label="Close"
-          title="Close"
+          aria-label="閉じる"
+          title="閉じる"
         >
           <X size={20} />
         </button>
 
         <div class="mb-6">
           <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">
-            ステップ {currentStep + 1} / {steps.length}
+            かんたんガイド　{currentStep + 1} / {steps.length}
           </div>
           <h2 class="text-2xl font-bold text-zinc-800">{steps[currentStep].title}</h2>
         </div>
@@ -51,8 +51,8 @@ export function OnboardingModal({
                 ヒント
               </div>
               <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>フォルダをドロップすると、音声と画像を再帰的にスキャンします。</li>
-                <li>カバー画像は "cover" や "album" という名前のファイルから自動検出されます。</li>
+                <li>「ファイルを選ぶ」か「フォルダを選ぶ」から追加できます。</li>
+                <li>フォルダを選ぶと、中にある音声とカバー画像をまとめて読み込みます。</li>
               </ul>
             </>
           )}
@@ -63,8 +63,8 @@ export function OnboardingModal({
                 ヒント
               </div>
               <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>カンマやセミコロンで区切って、複数のアーティストやタグを一括入力できます。</li>
-                <li>タイトル入力欄は長いタイトルに合わせて自動的に拡張されます。</li>
+                <li>曲名やアーティスト名は、一覧の入力欄をそのまま書き換えられます。</li>
+                <li>同じ番号がある場合は、該当する行が黄色で表示されます。</li>
               </ul>
             </>
           )}
@@ -75,8 +75,8 @@ export function OnboardingModal({
                 ヒント
               </div>
               <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>重複ファイルは「上書き」または「別名で保存」を選択できます。</li>
-                <li>変換中はリアルタイムで進捗が表示されます。</li>
+                <li>かんたんモードでは保存先を選ぶだけで、おすすめ設定を使用します。</li>
+                <li>保存後は、音声が最後まで正しく読み取れることも自動で確認します。</li>
               </ul>
             </>
           )}
@@ -96,7 +96,7 @@ export function OnboardingModal({
             onClick={onClose}
             class="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
           >
-            スキップ
+            閉じる
           </button>
           <div class="flex items-center gap-3">
             <button

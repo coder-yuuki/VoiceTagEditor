@@ -1,7 +1,8 @@
-import { FolderOpen, Settings, Upload } from 'lucide-preact';
-import type { ExportSettings, QualityOption } from '../types';
+import { FolderOpen, Save, Settings2, ShieldCheck } from 'lucide-preact';
+import type { AppMode, ExportSettings, QualityOption } from '../types';
 
 interface ExportDialogProps {
+  mode: AppMode;
   isOpen: boolean;
   settings: ExportSettings;
   qualityOptions: QualityOption[];
@@ -13,6 +14,7 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({
+  mode,
   isOpen,
   settings,
   qualityOptions,
@@ -26,92 +28,132 @@ export function ExportDialog({
     return null;
   }
 
-  return (
-    <div class="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
-      <div class="bg-white rounded-xl shadow-2xl p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-auto scale-100 animate-in zoom-in-95 duration-200">
-        <h2 class="text-lg font-semibold mb-4 text-zinc-800 flex items-center gap-2">
-          <Settings size={20} />
-          出力設定
-        </h2>
+  const simple = mode === 'simple';
 
-        <div class="mb-4">
-          <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">保存先フォルダ</label>
-          <div class="flex gap-2">
-            <input
-              type="text"
-              value={settings.outputPath}
-              placeholder="フォルダを選択..."
-              readOnly
-              class="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm bg-zinc-50 focus:outline-none text-zinc-600"
-            />
-            <button
-              onClick={onSelectOutputFolder}
-              class="px-3 py-2 border border-zinc-300 rounded-md bg-white text-zinc-700 text-sm hover:bg-zinc-50 hover:border-zinc-400 transition-colors whitespace-nowrap flex items-center gap-2"
-            >
-              <FolderOpen size={16} />
-            </button>
+  return (
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+      <div class="max-h-[90vh] w-full max-w-md overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+        <div class="flex items-start gap-3">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <Save size={22} />
+          </div>
+          <div>
+            <h2 class="text-xl font-bold text-zinc-900">編集した音声を保存</h2>
+            {simple && (
+              <p class="mt-1 text-sm leading-5 text-zinc-600">
+                保存する場所を選ぶだけで、おすすめ設定を使って保存します。
+              </p>
+            )}
           </div>
         </div>
 
-        <div class="mb-4">
-          <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">同名ファイルの処理</label>
-          <select
-            value={settings.overwriteMode}
-            onChange={(event) => onSettingsChange({
-              ...settings,
-              overwriteMode: event.currentTarget.value as ExportSettings['overwriteMode'],
-            })}
-            class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          >
-            <option value="rename">別名で保存</option>
-            <option value="overwrite">上書き保存</option>
-          </select>
+        <div class="mt-6">
+          <label class="block text-sm font-semibold text-zinc-800">保存先フォルダ</label>
+          <div class="mt-2 flex gap-2">
+            <div class="min-w-0 flex-1 truncate rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-600">
+              {settings.outputPath || 'まだ選ばれていません'}
+            </div>
+            <button
+              type="button"
+              onClick={onSelectOutputFolder}
+              class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            >
+              <FolderOpen size={17} />
+              選ぶ
+            </button>
+          </div>
+          {simple && settings.outputPath && (
+            <p class="mt-2 text-xs leading-5 text-zinc-500">
+              選んだ場所の中に、アーティスト名・作品名のフォルダを作って保存します。
+            </p>
+          )}
         </div>
 
-        <div class="mb-4">
-          <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">フォーマット</label>
-          <select
-            value={settings.format}
-            onChange={(event) => onFormatChange(event.currentTarget.value as ExportSettings['format'])}
-            class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          >
-            <option value="MP3">MP3</option>
-            <option value="M4A">M4A (AAC)</option>
-          </select>
-        </div>
+        {simple ? (
+          <div class="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div class="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <ShieldCheck size={18} />
+              おすすめ設定
+            </div>
+            <dl class="mt-3 grid grid-cols-[7rem_1fr] gap-y-2 text-sm">
+              <dt class="text-emerald-700">保存形式</dt>
+              <dd class="font-medium text-emerald-950">MP3</dd>
+              <dt class="text-emerald-700">音質</dt>
+              <dd class="font-medium text-emerald-950">高</dd>
+              <dt class="text-emerald-700">同名ファイル</dt>
+              <dd class="font-medium text-emerald-950">元を残して別名で保存</dd>
+            </dl>
+          </div>
+        ) : (
+          <div class="mt-6 space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-800">
+              <Settings2 size={17} />
+              詳細設定
+            </div>
 
-        <div class="mb-6">
-          <label class="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">音質</label>
-          <select
-            value={settings.quality}
-            onChange={(event) => onSettingsChange({
-              ...settings,
-              quality: event.currentTarget.value as ExportSettings['quality'],
-            })}
-            class="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          >
-            {qualityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-500">同名ファイルの処理</label>
+              <select
+                value={settings.overwriteMode}
+                onChange={(event) => onSettingsChange({
+                  ...settings,
+                  overwriteMode: event.currentTarget.value as ExportSettings['overwriteMode'],
+                })}
+                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="rename">別名で保存</option>
+                <option value="overwrite">上書き保存</option>
+              </select>
+            </div>
 
-        <div class="flex gap-3 justify-end pt-2 border-t border-zinc-100">
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-500">フォーマット</label>
+              <select
+                value={settings.format}
+                onChange={(event) => onFormatChange(event.currentTarget.value as ExportSettings['format'])}
+                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="MP3">MP3</option>
+                <option value="M4A">M4A (AAC)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-500">音質</label>
+              <select
+                value={settings.quality}
+                onChange={(event) => onSettingsChange({
+                  ...settings,
+                  quality: event.currentTarget.value as ExportSettings['quality'],
+                })}
+                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                {qualityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div class="mt-6 flex justify-end gap-3 border-t border-zinc-100 pt-4">
           <button
+            type="button"
             onClick={onCancel}
-            class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
+            class="rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
           >
             キャンセル
           </button>
           <button
+            type="button"
             onClick={onExport}
             disabled={!settings.outputPath}
-            class="px-4 py-2 border border-transparent rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
+            class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Upload size={16} />
-            出力
+            <Save size={17} />
+            保存を開始
           </button>
         </div>
       </div>

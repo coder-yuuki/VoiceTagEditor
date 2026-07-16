@@ -26,7 +26,7 @@ export function ProcessingOverlay({
           </div>
 
           <h2 class="text-xl font-semibold mb-4 text-zinc-800">
-            {convertProgress ? '変換中...' : 'ファイルを処理中...'}
+            {convertProgress ? '音声を保存して確認しています…' : '音声の情報を読み込んでいます…'}
           </h2>
 
           {convertProgress ? (
@@ -75,14 +75,14 @@ export function ProcessingOverlay({
                     processingProgress.status === 'completed' ? '完了: ' : 'エラー: '}
                 </span>
                 <span class="text-zinc-700">
-                  {processingProgress.file_path.split('/').pop() || processingProgress.file_path}
+                  {processingProgress.file_path.split(/[\\/]/).pop() || processingProgress.file_path}
                 </span>
               </div>
             </>
           ) : null}
 
           <div class="mt-6 text-xs text-zinc-400">
-            処理が完了するまでお待ちください...
+            完了するまでこのままお待ちください
           </div>
         </div>
       </div>
