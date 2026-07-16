@@ -89,7 +89,6 @@ function App() {
   const [ffmpegInstallLog, setFfmpegInstallLog] = useState<FfmpegInstallProgress[]>([]);
   const ffmpegSetupPromise = useRef<Promise<FfmpegInstallResult> | null>(null);
   const ffmpegReadyRef = useRef(false);
-  const shouldRunFfmpegAfterOnboardingRef = useRef(false);
   const isFfmpegReady = ffmpegSetup.status === 'ready';
 
   useEffect(() => {
@@ -114,13 +113,6 @@ function App() {
           };
 
           setFfmpegInstallLog(prev => [...prev.slice(-5), progress]);
-          setFfmpegSetup(prev => {
-            if (prev.status === 'ready') return prev;
-            return {
-              status: 'checking',
-              message
-            };
-          });
         });
       } catch (error) {
         console.error('FFmpegインストール進捗リスナーの設定に失敗:', error);
@@ -136,96 +128,67 @@ function App() {
     };
   }, []);
 
-  const ensureFfmpegReady = useCallback(async (showFailureDialog: boolean = true): Promise<boolean> => {
+  const ensureFfmpegReady = useCallback(async (): Promise<boolean> => {
+    const preparingMessage = '音声を扱うための準備中です…（初回のみ、数分かかることがあります）';
+    const failedMessage = '音声変換機能の準備に失敗しました。インターネット接続を確認して、もう一度お試しください。';
+
+    const markReady = (technicalDetail?: string) => {
+      ffmpegReadyRef.current = true;
+      setFfmpegSetup({
+        status: 'ready',
+        message: '音声を扱う準備ができました。',
+        technicalDetail,
+      });
+    };
+
+    const markFailed = (error: unknown) => {
+      ffmpegReadyRef.current = false;
+      ffmpegSetupPromise.current = null;
+      setFfmpegSetup({
+        status: 'failed',
+        message: failedMessage,
+        technicalDetail: String(error),
+      });
+    };
+
     if (ffmpegReadyRef.current) {
       return true;
     }
 
+    setFfmpegSetup({
+      status: 'checking',
+      message: preparingMessage,
+    });
+
     if (ffmpegSetupPromise.current) {
-      setFfmpegSetup({
-        status: 'checking',
-        message: 'FFmpegを自動インストールしています...'
-      });
       try {
         const result = await ffmpegSetupPromise.current;
-        ffmpegReadyRef.current = result.available;
-        setFfmpegSetup({
-          status: 'ready',
-          message: result.message
-        });
+        if (!result.available) {
+          markFailed(result.message);
+          return false;
+        }
+        markReady(result.message);
         return result.available;
       } catch (error) {
-        ffmpegReadyRef.current = false;
-        ffmpegSetupPromise.current = null;
-        const message = String(error);
-        setFfmpegSetup({
-          status: 'failed',
-          message
-        });
-        if (showFailureDialog) {
-          await confirm(`FFmpegの自動セットアップに失敗しました。\n\n${message}`, {
-            title: 'FFmpegセットアップ',
-            kind: 'warning'
-          });
-        }
+        markFailed(error);
         return false;
       }
     }
 
-    setFfmpegSetup({
-      status: 'checking',
-      message: 'FFmpegを確認しています...'
-    });
     setFfmpegInstallLog([]);
 
     try {
       const alreadyAvailable = await invoke<boolean>('check_ffmpeg');
       if (alreadyAvailable) {
-        ffmpegReadyRef.current = true;
         setFfmpegInstallLog([]);
-        setFfmpegSetup({
-          status: 'ready',
-          message: 'FFmpegは利用可能です。'
-        });
+        markReady('FFmpeg / ffprobe を確認しました。');
         return true;
       }
     } catch (error) {
-      ffmpegReadyRef.current = false;
-      const message = String(error);
-      setFfmpegSetup({
-        status: 'failed',
-        message
-      });
-      if (showFailureDialog) {
-        await confirm(`FFmpegの確認に失敗しました。\n\n${message}`, {
-          title: 'FFmpegセットアップ',
-          kind: 'warning'
-        });
-      }
+      markFailed(error);
       return false;
     }
 
-    const shouldInstall = await confirm(
-      '音声ファイルの処理にはFFmpegが必要です。\n\nFFmpeg / ffprobe が見つからないため、自動インストールを実行しますか？',
-      {
-        title: 'FFmpegをインストールしますか？',
-        kind: 'warning'
-      }
-    );
-
-    if (!shouldInstall) {
-      ffmpegReadyRef.current = false;
-      setFfmpegSetup({
-        status: 'failed',
-        message: 'FFmpegがインストールされていません。音声ファイルの処理にはFFmpegが必要です。'
-      });
-      return false;
-    }
-
-    setFfmpegSetup({
-      status: 'checking',
-      message: 'FFmpegを自動インストールしています...'
-    });
     setFfmpegInstallLog([{ stream: 'status', message: 'FFmpegの自動インストールを開始します。' }]);
 
     if (!ffmpegSetupPromise.current) {
@@ -234,26 +197,14 @@ function App() {
 
     try {
       const result = await ffmpegSetupPromise.current;
-      ffmpegReadyRef.current = result.available;
-      setFfmpegSetup({
-        status: 'ready',
-        message: result.message
-      });
+      if (!result.available) {
+        markFailed(result.message);
+        return false;
+      }
+      markReady(result.message);
       return result.available;
     } catch (error) {
-      ffmpegReadyRef.current = false;
-      ffmpegSetupPromise.current = null;
-      const message = String(error);
-      setFfmpegSetup({
-        status: 'failed',
-        message
-      });
-      if (showFailureDialog) {
-        await confirm(`FFmpegの自動セットアップに失敗しました。\n\n${message}`, {
-          title: 'FFmpegセットアップ',
-          kind: 'warning'
-        });
-      }
+      markFailed(error);
       return false;
     }
   }, []);
@@ -322,29 +273,25 @@ function App() {
   }, [checkForUpdates]);
 
   useEffect(() => {
+    void ensureFfmpegReady();
+  }, [ensureFfmpegReady]);
+
+  useEffect(() => {
     try {
       const seen = localStorage.getItem('vte_onboarding_seen_v1');
       if (!seen) {
-        shouldRunFfmpegAfterOnboardingRef.current = true;
         setShowOnboarding(true);
-        return;
       }
-      void ensureFfmpegReady(true);
-    } catch (e) {
+    } catch {
       // localStorage 不可環境でもアプリは継続
-      void ensureFfmpegReady(true);
     }
-  }, [ensureFfmpegReady]);
+  }, []);
 
   const closeOnboarding = (markSeen: boolean = true) => {
     if (markSeen) {
       try { localStorage.setItem('vte_onboarding_seen_v1', '1'); } catch { }
     }
     setShowOnboarding(false);
-    if (shouldRunFfmpegAfterOnboardingRef.current) {
-      shouldRunFfmpegAfterOnboardingRef.current = false;
-      void ensureFfmpegReady(true);
-    }
   };
 
   // フォーマットに応じた音質設定のオプションを取得
@@ -498,7 +445,7 @@ function App() {
       setCompletedCount(0);
 
       // FFmpegの確認と自動セットアップ
-      const ffmpegAvailable = await ensureFfmpegReady(true);
+      const ffmpegAvailable = await ensureFfmpegReady();
       if (!ffmpegAvailable) {
         return;
       }
@@ -1426,7 +1373,7 @@ ${dirPath}
         return;
       }
 
-      const ffmpegAvailable = await ensureFfmpegReady(true);
+      const ffmpegAvailable = await ensureFfmpegReady();
       if (!ffmpegAvailable) {
         return;
       }
@@ -1635,7 +1582,7 @@ ${dirPath}
         <FfmpegBanner
           setup={ffmpegSetup}
           installLog={ffmpegInstallLog}
-          onRetry={() => { void ensureFfmpegReady(true); }}
+          onRetry={() => { void ensureFfmpegReady(); }}
         />
 
         <TrackTable

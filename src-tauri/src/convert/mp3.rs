@@ -70,4 +70,3 @@ pub fn append_format_specific_args(
         _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
     }
 }
-

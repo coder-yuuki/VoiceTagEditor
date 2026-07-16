@@ -76,6 +76,7 @@ export type FfmpegSetupStatus = 'idle' | 'checking' | 'ready' | 'failed';
 export interface FfmpegSetupState {
   status: FfmpegSetupStatus;
   message: string;
+  technicalDetail?: string;
 }
 
 export interface AlbumData {

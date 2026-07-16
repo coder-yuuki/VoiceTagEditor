@@ -4,10 +4,16 @@ import type { FfmpegInstallProgress, FfmpegSetupState } from '../types';
 interface FfmpegBannerProps {
   setup: FfmpegSetupState;
   installLog: FfmpegInstallProgress[];
+  showTechnicalDetails?: boolean;
   onRetry: () => void;
 }
 
-export function FfmpegBanner({ setup, installLog, onRetry }: FfmpegBannerProps) {
+export function FfmpegBanner({
+  setup,
+  installLog,
+  showTechnicalDetails = false,
+  onRetry,
+}: FfmpegBannerProps) {
   if (setup.status === 'idle' || setup.status === 'ready') {
     return null;
   }
@@ -26,19 +32,25 @@ export function FfmpegBanner({ setup, installLog, onRetry }: FfmpegBannerProps) 
           )}
         </div>
         <div class="min-w-0 flex-1">
-          <div class="truncate font-medium">{setup.message}</div>
-          {installLog.length > 0 && (
-            <div class="mt-1 space-y-0.5">
-              {installLog.slice(-3).map((entry, index) => (
-                <div
-                  key={`${entry.stream}-${index}-${entry.message}`}
-                  class={`truncate font-mono text-[11px] leading-4 ${entry.stream === 'stderr' ? 'text-amber-900' : 'opacity-80'}`}
-                >
-                  <span class="mr-1 opacity-70">{entry.stream === 'stderr' ? '!' : '>'}</span>
-                  {entry.message}
-                </div>
-              ))}
-            </div>
+          <div class="font-medium">{setup.message}</div>
+          {showTechnicalDetails && (setup.technicalDetail || installLog.length > 0) && (
+            <details class="mt-1">
+              <summary class="cursor-pointer select-none opacity-80">技術情報を表示</summary>
+              <div class="mt-1 space-y-0.5 font-mono text-[11px] leading-4 break-all">
+                {setup.technicalDetail && (
+                  <div class="text-amber-900">{setup.technicalDetail}</div>
+                )}
+                {installLog.slice(-5).map((entry, index) => (
+                  <div
+                    key={`${entry.stream}-${index}-${entry.message}`}
+                    class={entry.stream === 'stderr' ? 'text-amber-900' : 'opacity-80'}
+                  >
+                    <span class="mr-1 opacity-70">{entry.stream === 'stderr' ? '!' : '>'}</span>
+                    {entry.message}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       </div>

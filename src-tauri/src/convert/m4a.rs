@@ -50,10 +50,7 @@ pub fn append_format_specific_args(
     }
 
     // Encoder
-    ffmpeg_args.extend(vec![
-        "-c:a".to_string(),
-        "aac".to_string(),
-    ]);
+    ffmpeg_args.extend(vec!["-c:a".to_string(), "aac".to_string()]);
 
     // Bitrate mapping
     match output_settings.quality.as_str() {
@@ -64,4 +61,3 @@ pub fn append_format_specific_args(
         _ => ffmpeg_args.extend(vec!["-b:a".to_string(), "192k".to_string()]),
     }
 }
-
