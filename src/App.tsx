@@ -33,6 +33,17 @@ import "./App.css";
 
 const MODE_STORAGE_KEY = 'vte_display_mode_v1';
 
+const compareTracksByNumber = (a: Track, b: Track): number => {
+  const diskDifference = (Number.parseInt(a.diskNumber, 10) || 0)
+    - (Number.parseInt(b.diskNumber, 10) || 0);
+  if (diskDifference !== 0) {
+    return diskDifference;
+  }
+
+  return (Number.parseInt(a.trackNumber, 10) || 0)
+    - (Number.parseInt(b.trackNumber, 10) || 0);
+};
+
 function App() {
   const [mode, setMode] = useState<AppMode>(() => {
     try {
@@ -369,18 +380,14 @@ function App() {
     return result;
   };
 
-  // 数字変換関数（"02" → "2", 非数字 → ""）
+  // 数字変換関数（"02" → "2", "2/12" → "2", 非数字 → ""）
   const normalizeNumberString = (value: string): string => {
-    // 数字以外の文字を除去
-    const digitsOnly = value.replace(/[^0-9]/g, '');
-
-    if (digitsOnly === '') {
+    const firstNumber = value.normalize('NFKC').match(/[0-9]+/)?.[0];
+    if (!firstNumber) {
       return '';
     }
 
-    // 先頭の0を除去して数字に変換、再度文字列に
-    const numberValue = parseInt(digitsOnly, 10);
-    // NaNチェックと0の場合の処理
+    const numberValue = parseInt(firstNumber, 10);
     if (isNaN(numberValue)) {
       return '';
     }
@@ -469,7 +476,7 @@ function App() {
         tone: 'error',
       });
     }
-  }, [showAppDialog]);
+  }, [mode, showAppDialog]);
 
   // 実際のファイル処理を行う関数
   const processNewFiles = async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
@@ -622,7 +629,10 @@ function App() {
             return numberedTrack;
           });
 
-          return [...prev, ...numberedTracks];
+          const combinedTracks = [...prev, ...numberedTracks];
+          return mode === 'simple'
+            ? combinedTracks.sort(compareTracksByNumber)
+            : combinedTracks;
         });
       }
 
@@ -1110,23 +1120,7 @@ function App() {
   // トラック削除処理（確認ポップアップ付き）
   // トラックソート処理（Disk → Track順）
   const handleSort = () => {
-    const sortedTracks = [...tracks].sort((a, b) => {
-      // 第1ソート: Disk番号
-      const diskA = parseInt(a.diskNumber) || 0;
-      const diskB = parseInt(b.diskNumber) || 0;
-
-      if (diskA !== diskB) {
-        return diskA - diskB;
-      }
-
-      // 第2ソート: Track番号
-      const trackA = parseInt(a.trackNumber) || 0;
-      const trackB = parseInt(b.trackNumber) || 0;
-
-      return trackA - trackB;
-    });
-
-    setTracks(sortedTracks);
+    setTracks([...tracks].sort(compareTracksByNumber));
   };
   const handleTrackDelete = async (trackId: string) => {
     console.log("Deleting track:", trackId);

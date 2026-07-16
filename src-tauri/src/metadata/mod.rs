@@ -8,10 +8,11 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use crate::models::AudioMetadata;
 
-mod mp3;
+mod filename;
 mod flac;
-mod wav;
 mod m4a;
+mod mp3;
+mod wav;
 
 const SUPPORTED_EXTENSIONS: [&str; 4] = ["mp3", "flac", "wav", "m4a"];
 
@@ -35,13 +36,16 @@ pub(crate) async fn extract_metadata_internal(file_path: &str) -> Result<AudioMe
         _ => return Err("サポートされていないファイル形式です".to_string()),
     };
 
-    match ext.as_str() {
+    let mut metadata = match ext.as_str() {
         "mp3" => mp3::extract(file_path).await,
         "flac" => flac::extract(file_path).await,
         "wav" => wav::extract(file_path).await,
         "m4a" => m4a::extract(file_path).await,
         _ => Err("サポートされていないファイル形式です".to_string()),
-    }
+    }?;
+
+    filename::fill_missing_metadata_from_filename(&mut metadata, file_path);
+    Ok(metadata)
 }
 
 pub(super) async fn run_ffprobe(file_path: &str) -> Result<serde_json::Value, String> {
