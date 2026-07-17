@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "preact/hooks";
-import { confirm, open } from "@tauri-apps/plugin-dialog";
+import { confirm, message, open } from "@tauri-apps/plugin-dialog";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { listen } from '@tauri-apps/api/event'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
@@ -295,11 +295,19 @@ function App() {
         }
       });
 
-      // インストール後は再起動が必要な場合があります（OS/インストーラ依存）
-      await confirm('アップデートを適用しました。アプリを再起動してください。', {
+      await message('アップデートを適用しました。アプリを再起動します。', {
         title: 'アップデート完了',
         kind: 'info'
       });
+      try {
+        await invoke<void>('restart_app');
+      } catch (restartError) {
+        console.warn('アップデート適用後の自動再起動に失敗:', restartError);
+        await message(
+          'アップデートは適用されていますが、自動で再起動できませんでした。アプリを一度終了し、もう一度起動してください。',
+          { title: '再起動が必要です', kind: 'warning' }
+        );
+      }
     } catch (e) {
       // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
       console.warn('アップデート確認に失敗:', e);

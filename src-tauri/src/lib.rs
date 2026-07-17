@@ -18,6 +18,11 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -32,6 +37,7 @@ pub fn run() {
         .plugin(init_opener())
         .invoke_handler(tauri::generate_handler![
             greet,
+            restart_app,
             system_check::check_ffmpeg,
             system_check::ensure_ffmpeg_installed,
             metadata::extract_metadata,
