@@ -29,6 +29,7 @@ export function ExportDialog({
   }
 
   const simple = mode === 'simple';
+  const tagOnly = settings.encodeMode === 'copy';
 
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
@@ -119,6 +120,26 @@ export function ExportDialog({
             </div>
 
             <div>
+              <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-500">保存方法</label>
+              <select
+                value={settings.encodeMode}
+                onChange={(event) => onSettingsChange({
+                  ...settings,
+                  encodeMode: event.currentTarget.value as ExportSettings['encodeMode'],
+                })}
+                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="reencode">再エンコードする</option>
+                <option value="copy">可能な場合はタグのみ更新</option>
+              </select>
+              <p class="mt-1.5 text-xs leading-5 text-zinc-500">
+                {tagOnly
+                  ? '元ファイルが保存形式と同じ場合、音声を再エンコードせずタグとカバーだけ更新します。形式が違う場合は通常どおり変換します。'
+                  : '選択した音質で音声を変換して保存します。'}
+              </p>
+            </div>
+
+            <div>
               <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-500">音質</label>
               <select
                 value={settings.quality}
@@ -126,7 +147,8 @@ export function ExportDialog({
                   ...settings,
                   quality: event.currentTarget.value as ExportSettings['quality'],
                 })}
-                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                disabled={tagOnly}
+                class="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
               >
                 {qualityOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -134,6 +156,11 @@ export function ExportDialog({
                   </option>
                 ))}
               </select>
+              {tagOnly && (
+                <p class="mt-1.5 text-xs leading-5 text-zinc-500">
+                  タグのみ更新時は元の音質を維持します。形式違いで変換する場合のみ、上記の音質が使われます。
+                </p>
+              )}
             </div>
           </div>
         )}

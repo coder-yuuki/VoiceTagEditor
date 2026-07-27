@@ -95,6 +95,8 @@ export interface ExportSettings {
   overwriteMode: 'overwrite' | 'rename';
   format: 'MP3' | 'M4A';
   quality: 'highest' | 'high' | 'medium' | 'low';
+  /** reencode: 常に再エンコード / copy: 同形式ならストリームコピー */
+  encodeMode: 'reencode' | 'copy';
 }
 
 export interface QualityOption {

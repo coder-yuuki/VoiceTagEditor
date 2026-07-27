@@ -6,6 +6,7 @@ pub fn append_format_specific_args(
     track: &ConvertTrack,
     album_data: &ConvertAlbumData,
     output_settings: &ConvertOutputSettings,
+    stream_copy: bool,
 ) {
     if artwork_input_added {
         ffmpeg_args.extend(vec![
@@ -55,10 +56,18 @@ pub fn append_format_specific_args(
 
     ffmpeg_args.extend(vec![
         "-c:a".to_string(),
-        "libmp3lame".to_string(),
+        if stream_copy {
+            "copy".to_string()
+        } else {
+            "libmp3lame".to_string()
+        },
         "-id3v2_version".to_string(),
         "3".to_string(),
     ]);
+
+    if stream_copy {
+        return;
+    }
 
     match output_settings.quality.as_str() {
         "320" => ffmpeg_args.extend(vec!["-b:a".to_string(), "320k".to_string()]),

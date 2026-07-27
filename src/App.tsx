@@ -79,7 +79,8 @@ function App() {
     outputPath: '',
     overwriteMode: 'rename',
     format: 'MP3',
-    quality: 'high'
+    quality: 'high',
+    encodeMode: 'reencode',
   });
 
   // オンボーディング
@@ -1238,6 +1239,7 @@ function App() {
       overwriteMode: 'rename',
       format: 'MP3',
       quality: 'high',
+      encodeMode: 'reencode',
     }));
     await handleActualExport(true);
   };
@@ -1514,6 +1516,7 @@ function App() {
           overwriteMode: 'rename',
           format: 'MP3',
           quality: 'high',
+          encodeMode: 'reencode',
         }
         : exportSettings;
 
@@ -1562,6 +1565,7 @@ function App() {
         format: effectiveExportSettings.format,
         quality: convertQuality(effectiveExportSettings.format, effectiveExportSettings.quality),
         overwrite_mode: effectiveExportSettings.overwriteMode,
+        encode_mode: effectiveExportSettings.encodeMode,
       };
 
       try {

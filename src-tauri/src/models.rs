@@ -67,6 +67,13 @@ pub struct ConvertOutputSettings {
     pub format: String,
     pub quality: String,
     pub overwrite_mode: String,
+    /// "reencode" | "copy"（未指定時は reencode）
+    #[serde(default = "default_encode_mode")]
+    pub encode_mode: String,
+}
+
+fn default_encode_mode() -> String {
+    "reencode".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]

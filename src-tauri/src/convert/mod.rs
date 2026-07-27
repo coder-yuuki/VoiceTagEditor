@@ -56,6 +56,24 @@ fn resolve_output_extension(format: &str) -> &'static str {
     }
 }
 
+/// ソースの拡張子が出力コンテナへストリームコピー可能か判定する
+fn source_supports_stream_copy(source_path: &str, format: &str) -> bool {
+    let extension = Path::new(source_path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match format.to_ascii_uppercase().as_str() {
+        "M4A" => matches!(extension.as_str(), "m4a" | "mp4" | "aac" | "m4b"),
+        _ => extension == "mp3",
+    }
+}
+
+fn wants_stream_copy(output_settings: &ConvertOutputSettings) -> bool {
+    output_settings.encode_mode.eq_ignore_ascii_case("copy")
+}
+
 fn resolve_artwork_input_path(album_data: &ConvertAlbumData) -> Option<String> {
     if let Some(artwork_path) = &album_data.album_artwork_path {
         let trimmed = artwork_path.trim();
@@ -473,6 +491,10 @@ async fn convert_single_file(
     // allow overwrite
     ffmpeg_args.push("-y".to_string());
 
+    // 同じ形式なら再エンコードせずタグ／カバーのみ更新。形式が違う場合は通常変換へフォールバック。
+    let stream_copy = wants_stream_copy(output_settings)
+        && source_supports_stream_copy(source_path, &output_settings.format);
+
     match output_settings.format.to_ascii_uppercase().as_str() {
         "M4A" => {
             m4a::append_format_specific_args(
@@ -481,6 +503,7 @@ async fn convert_single_file(
                 track,
                 album_data,
                 output_settings,
+                stream_copy,
             );
         }
         _ => {
@@ -490,6 +513,7 @@ async fn convert_single_file(
                 track,
                 album_data,
                 output_settings,
+                stream_copy,
             );
         }
     }
@@ -747,6 +771,17 @@ mod tests {
         assert!(result.is_err(), "invalid audio must not pass verification");
 
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn stream_copy_is_allowed_only_for_compatible_containers() {
+        assert!(source_supports_stream_copy("/tmp/a.mp3", "MP3"));
+        assert!(source_supports_stream_copy("/tmp/a.MP3", "mp3"));
+        assert!(!source_supports_stream_copy("/tmp/a.wav", "MP3"));
+        assert!(!source_supports_stream_copy("/tmp/a.flac", "MP3"));
+        assert!(source_supports_stream_copy("/tmp/a.m4a", "M4A"));
+        assert!(source_supports_stream_copy("/tmp/a.mp4", "M4A"));
+        assert!(!source_supports_stream_copy("/tmp/a.mp3", "M4A"));
     }
 
     #[test]

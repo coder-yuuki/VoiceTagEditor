@@ -6,6 +6,7 @@ pub fn append_format_specific_args(
     track: &ConvertTrack,
     album_data: &ConvertAlbumData,
     output_settings: &ConvertOutputSettings,
+    stream_copy: bool,
 ) {
     // Map audio and optional cover art
     if artwork_input_added {
@@ -49,8 +50,19 @@ pub fn append_format_specific_args(
         ]);
     }
 
-    // Encoder
-    ffmpeg_args.extend(vec!["-c:a".to_string(), "aac".to_string()]);
+    // Encoder / stream copy
+    ffmpeg_args.extend(vec![
+        "-c:a".to_string(),
+        if stream_copy {
+            "copy".to_string()
+        } else {
+            "aac".to_string()
+        },
+    ]);
+
+    if stream_copy {
+        return;
+    }
 
     // Bitrate mapping
     match output_settings.quality.as_str() {
