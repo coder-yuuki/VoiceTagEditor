@@ -2,6 +2,26 @@
 
 音声ファイルのメタデータ・タグ編集を簡単に行えるデスクトップアプリケーションです。
 
+<p align="center">
+  <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/coder-yuuki/VoiceTagEditor?label=Latest&style=for-the-badge&color=2563eb" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
+    <img alt="Download for macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
+    <img alt="Download for Windows" src="https://img.shields.io/badge/Windows-x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
+  </a>
+</p>
+
+<p align="center">
+  <sub>ボタンから <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">Releases</a> ページへ移動します。macOS は <code>.dmg</code>、Windows は <code>.exe</code> または <code>.msi</code> を選んでください。</sub>
+</p>
+
 ## 主な機能
 
 ### メタデータ編集
@@ -103,9 +123,9 @@ pnpm tsc
 
 ## ダウンロード
 
-- 最新版は GitHub Releases から入手できます: https://github.com/iLickeyPro/VoiceTagEditor/releases/latest
-- GitHub Actions の自動リリース対象OS: macOS / Windows（Linuxは現状未配布）
-- macOSでの初回起動確認（公証・署名の検証）:
+- 上部のダウンロードボタン、または [Releases](https://github.com/coder-yuuki/VoiceTagEditor/releases/latest) から最新版を入手できます。
+- 配布対象 OS: macOS（Apple Silicon） / Windows（Linux はソースからビルド）
+- macOS での初回起動確認（公証・署名の検証）:
   - 署名・公証なしビルドの場合、初回はGatekeeperでブロックされることがあります。
   - 開く手順（2通り）
     - Finderで右クリック → 開く → ダイアログで「開く」
