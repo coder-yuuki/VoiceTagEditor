@@ -1,5 +1,6 @@
-import { useState } from 'preact/hooks';
-import { AlertTriangle, ArrowDownToLine, Clipboard, Copy, FileAudio, FolderOpen, Trash2, Upload, X } from 'lucide-preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { AlertTriangle, ArrowDownToLine, Clipboard, Copy, FileAudio, FolderOpen, Pause, Play, Trash2, Upload, X } from 'lucide-preact';
 import type { AppMode, ChipColor, Track } from '../types';
 
 interface TrackTableProps {
@@ -57,6 +58,9 @@ export function TrackTable({
   onCopyFirstTrackVoiceActorsToAll,
 }: TrackTableProps) {
   const [bulkVoiceActorInput, setBulkVoiceActorInput] = useState('');
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [previewErrorTrackId, setPreviewErrorTrackId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const simple = mode === 'simple';
   const numberCounts = new Map<string, number>();
   for (const track of tracks) {
@@ -72,6 +76,82 @@ export function TrackTable({
   );
   const hasFirstTrackVoiceActors = tracks[0]?.artists.length > 0;
   const bulkToolbarTop = simple && duplicateKeys.size > 0 ? 'top-[41px]' : 'top-0';
+
+  const stopPreview = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+    setPlayingTrackId(null);
+  };
+
+  useEffect(() => {
+    const audio = new Audio();
+    audio.preload = 'none';
+    const handleEnded = () => setPlayingTrackId(null);
+    const handleError = () => {
+      setPlayingTrackId((current) => {
+        if (current) {
+          setPreviewErrorTrackId(current);
+        }
+        return null;
+      });
+    };
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+    audioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      audioRef.current = null;
+    };
+  }, []);
+
+  // 一覧から消えたトラック／保存処理中は再生を止める
+  useEffect(() => {
+    if (isProcessing) {
+      stopPreview();
+      return;
+    }
+    if (playingTrackId && !tracks.some((track) => track.id === playingTrackId)) {
+      stopPreview();
+    }
+  }, [tracks, playingTrackId, isProcessing]);
+
+  const togglePreview = async (track: Track) => {
+    if (!track.filePath) {
+      return;
+    }
+
+    setPreviewErrorTrackId(null);
+
+    if (playingTrackId === track.id) {
+      stopPreview();
+      return;
+    }
+
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    try {
+      audio.pause();
+      audio.src = convertFileSrc(track.filePath);
+      setPlayingTrackId(track.id);
+      await audio.play();
+    } catch (error) {
+      console.error('プレビュー再生に失敗しました:', error);
+      setPlayingTrackId(null);
+      setPreviewErrorTrackId(track.id);
+    }
+  };
 
   const handleBulkApply = () => {
     onApplyVoiceActorsToAll(bulkVoiceActorInput);
@@ -183,7 +263,8 @@ export function TrackTable({
       <table class="w-full table-fixed divide-y divide-zinc-200">
         <thead class={`sticky z-10 bg-zinc-50 shadow-sm ${simple && duplicateKeys.size > 0 ? 'top-[109px]' : 'top-[68px]'}`}>
           <tr>
-            <th class="w-16 px-3 py-3 text-center text-xs font-semibold text-zinc-500">削除</th>
+            <th class="w-14 px-2 py-3 text-center text-xs font-semibold text-zinc-500">再生</th>
+            <th class="w-14 px-2 py-3 text-center text-xs font-semibold text-zinc-500">削除</th>
             <th class="w-24 px-3 py-3 text-center text-xs font-semibold text-zinc-500">ディスク番号</th>
             <th class="w-28 px-3 py-3 text-center text-xs font-semibold text-zinc-500">トラック番号</th>
             <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500">タイトル</th>
@@ -195,16 +276,52 @@ export function TrackTable({
             const key = numberKey(track);
             const hasDuplicate = key ? duplicateKeys.has(key) : false;
             const canCopyFromAbove = index > 0 && tracks[index - 1].artists.length > 0;
+            const isPlaying = playingTrackId === track.id;
+            const previewFailed = previewErrorTrackId === track.id;
+            const canPreview = Boolean(track.filePath) && !isProcessing;
 
             return (
               <tr
                 key={track.id}
                 class={`transition-colors ${hasDuplicate ? 'bg-amber-50/70 hover:bg-amber-50' : 'hover:bg-zinc-50'}`}
               >
-                <td class="px-3 py-3 text-center align-top">
+                <td class="px-2 py-3 text-center align-top">
                   <button
                     type="button"
-                    onClick={() => onTrackDelete(track.id)}
+                    onClick={() => {
+                      void togglePreview(track);
+                    }}
+                    disabled={!canPreview}
+                    class={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      isPlaying
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : previewFailed
+                          ? 'text-red-500 hover:bg-red-50 hover:text-red-600'
+                          : 'text-zinc-500 hover:bg-blue-50 hover:text-blue-600'
+                    }`}
+                    title={
+                      !track.filePath
+                        ? '再生できるファイルがありません'
+                        : isPlaying
+                          ? '再生を停止'
+                          : previewFailed
+                            ? '再生に失敗しました。もう一度試せます'
+                            : 'この音声をプレビュー再生'
+                    }
+                    aria-label={isPlaying ? `${track.title}の再生を停止` : `${track.title}をプレビュー再生`}
+                  >
+                    {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+                  </button>
+                </td>
+                <td class="px-2 py-3 text-center align-top">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (playingTrackId === track.id) {
+                        stopPreview();
+                      }
+                      onTrackDelete(track.id);
+                    }}
                     class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600"
                     title="この音声を一覧から削除"
                     aria-label={`${track.title}を削除`}
