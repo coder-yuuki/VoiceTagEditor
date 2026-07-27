@@ -63,7 +63,7 @@ export function OnboardingModal({
                 ヒント
               </div>
               <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>曲名やアーティスト名は、一覧の入力欄をそのまま書き換えられます。</li>
+                <li>トラック名や声優名は、一覧の入力欄をそのまま書き換えられます。</li>
                 <li>同じ番号がある場合は、該当する行が黄色で表示されます。</li>
               </ul>
             </>

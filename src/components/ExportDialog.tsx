@@ -64,7 +64,7 @@ export function ExportDialog({
           </div>
           {simple && settings.outputPath && (
             <p class="mt-2 text-xs leading-5 text-zinc-500">
-              選んだ場所の中に、アーティスト名・作品名のフォルダを作って保存します。
+              選んだ場所の中に、サークル名・音声作品名のフォルダを作って保存します。
             </p>
           )}
         </div>

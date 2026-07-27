@@ -12,7 +12,7 @@ import { FfmpegBanner } from './components/FfmpegBanner';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ProcessingOverlay } from './components/ProcessingOverlay';
 import { Sidebar } from './components/Sidebar';
-import { StepIndicator } from './components/StepIndicator';
+import { SimpleWizard } from './components/SimpleWizard';
 import { TrackTable } from './components/TrackTable';
 import type {
   AlbumData,
@@ -28,6 +28,7 @@ import type {
   ProgressEvent,
   QualityOption,
   Track,
+  WizardStep,
 } from './types';
 import "./App.css";
 
@@ -52,6 +53,8 @@ function App() {
       return 'simple';
     }
   });
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  const [savedCount, setSavedCount] = useState(0);
   const [albumData, setAlbumData] = useState<AlbumData>({
     albumArtwork: null,
     albumTitle: "",
@@ -84,16 +87,20 @@ function App() {
   const [onboardingStep, setOnboardingStep] = useState<number>(0);
   const onboardingSteps: OnboardingStep[] = [
     {
-      title: 'ファイルを読み込む',
+      title: '音声を選ぶ',
       desc: '「ファイルを選ぶ」または「フォルダを選ぶ」から音声を追加します。画面へドラッグ＆ドロップしても追加できます。'
     },
     {
-      title: '情報を編集する',
-      desc: '読み込まれた曲名やアーティスト名を確認し、必要なところだけ書き換えます。'
+      title: '音声作品の情報を入力する',
+      desc: 'カバー画像・音声作品名・サークル名など、作品全体の情報を入力します。分かるところだけで大丈夫です。'
+    },
+    {
+      title: 'トラックを確認する',
+      desc: '各トラックのタイトルや番号を確認し、必要なところだけ書き換えます。'
     },
     {
       title: '保存する',
-      desc: '右上の「保存」ボタンを押して保存先を選びます。かんたんモードでは、おすすめ設定が自動で使われます。'
+      desc: '保存先フォルダを選んで「保存を開始」を押します。おすすめ設定が自動で使われます。'
     }
   ];
 
@@ -148,6 +155,13 @@ function App() {
       // localStorageが使えない場合も、現在の起動中は選択したモードを維持する
     }
   }, [mode]);
+
+  const handleModeChange = (newMode: AppMode) => {
+    if (newMode === 'simple' && mode === 'advanced') {
+      setWizardStep(tracks.length > 0 ? 3 : 1);
+    }
+    setMode(newMode);
+  };
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -674,6 +688,10 @@ function App() {
         });
       }
 
+      if (mode === 'simple' && newTracks.length > 0) {
+        setWizardStep((current) => (current === 1 ? 2 : current));
+      }
+
     } catch (error) {
       console.error('オーディオファイルの処理エラー:', error);
       await showAppDialog({
@@ -980,6 +998,43 @@ function App() {
     handleTrackChange(trackId, 'artists', updatedArtists);
   };
 
+  const parseVoiceActorList = (input: string): string[] => {
+    return trimAndDedup(
+      input.split(/[,，;；]/).map((name) => name.trim()).filter((name) => name.length > 0),
+    );
+  };
+
+  const applyVoiceActorsToAllTracks = (input: string) => {
+    const artists = parseVoiceActorList(input);
+    if (artists.length === 0) return;
+    setTracks(tracks.map((track) => ({
+      ...track,
+      artists,
+      currentArtistInput: '',
+    })));
+  };
+
+  const copyVoiceActorsFromPreviousTrack = (trackId: string) => {
+    const index = tracks.findIndex((track) => track.id === trackId);
+    if (index <= 0) return;
+    const artists = [...tracks[index - 1].artists];
+    setTracks(tracks.map((track) => (
+      track.id === trackId
+        ? { ...track, artists, currentArtistInput: '' }
+        : track
+    )));
+  };
+
+  const copyFirstTrackVoiceActorsToAll = () => {
+    if (tracks.length === 0 || tracks[0].artists.length === 0) return;
+    const artists = [...tracks[0].artists];
+    setTracks(tracks.map((track) => ({
+      ...track,
+      artists: [...artists],
+      currentArtistInput: '',
+    })));
+  };
+
   // クリップボードにコピー
   const copyToClipboard = async (text: string, source: string = '') => {
     try {
@@ -1165,20 +1220,26 @@ function App() {
       console.error("Error showing dialog:", error);
     }
   };
-  // 出力設定ダイアログを表示
+  // 出力設定ダイアログを表示（詳細モード専用）
   const handleExport = async () => {
     if (tracks.length === 0) {
-      return; // データがない場合は何もしない
-    }
-    if (mode === 'simple') {
-      setExportSettings(prev => ({
-        ...prev,
-        overwriteMode: 'rename',
-        format: 'MP3',
-        quality: 'high',
-      }));
+      return;
     }
     setShowExportDialog(true);
+  };
+
+  // かんたんモードのウィザード保存（ステップ4から直接実行）
+  const handleSimpleExport = async () => {
+    if (tracks.length === 0) {
+      return;
+    }
+    setExportSettings(prev => ({
+      ...prev,
+      overwriteMode: 'rename',
+      format: 'MP3',
+      quality: 'high',
+    }));
+    await handleActualExport(true);
   };
 
   // フォルダ選択処理
@@ -1210,7 +1271,7 @@ function App() {
     try {
       const selected = await open({
         multiple: false,
-        title: 'アルバムアートワークを選択',
+        title: 'カバー画像を選択',
         filters: [
           { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
         ]
@@ -1445,7 +1506,7 @@ function App() {
   };
 
   // 実際の出力処理
-  const handleActualExport = async () => {
+  const handleActualExport = async (fromSimpleWizard = false) => {
     try {
       const effectiveExportSettings: ExportSettings = mode === 'simple'
         ? {
@@ -1575,12 +1636,17 @@ function App() {
             }
           } else {
             // すべて成功した場合
-            await showAppDialog({
-              title: '保存が完了しました',
-              message: `${allConvertedFiles.length}件の音声を保存しました。\n保存した音声が最後まで正しく読み取れることも確認済みです。`,
-              confirmLabel: '完了',
-              tone: 'success',
-            });
+            if (fromSimpleWizard || mode === 'simple') {
+              setSavedCount(allConvertedFiles.length);
+              setWizardStep('complete');
+            } else {
+              await showAppDialog({
+                title: '保存が完了しました',
+                message: `${allConvertedFiles.length}件の音声を保存しました。\n保存した音声が最後まで正しく読み取れることも確認済みです。`,
+                confirmLabel: '完了',
+                tone: 'success',
+              });
+            }
             break;
           }
         }
@@ -1623,14 +1689,14 @@ function App() {
     const confirmMessage = mode === 'simple'
       ? `読み込んだ内容をすべて消しますか？
 
-音声の一覧、作品全体の情報、カバー画像が画面から消えます。
+音声の一覧、音声作品の情報、カバー画像が画面から消えます。
 パソコンにある元の音声ファイルは削除されません。`
       : `すべての編集内容を削除しますか？
 
 この操作により以下がリセットされます：
 • すべてのトラック
-• アルバム情報
-• アルバムアートワーク
+• 音声作品の情報
+• カバー画像
 
 元の音声ファイルは削除されません。`;
 
@@ -1653,6 +1719,10 @@ function App() {
           albumArtworkPath: undefined,
           albumArtworkCachePath: undefined
         });
+        if (mode === 'simple') {
+          setWizardStep(1);
+          setSavedCount(0);
+        }
         console.log("All data cleared successfully");
       }
     } catch (error) {
@@ -1661,21 +1731,40 @@ function App() {
   };
 
 
+  const handleStartOver = () => {
+    setTracks([]);
+    setAlbumData({
+      albumTitle: '',
+      albumArtist: '',
+      releaseDate: '',
+      tags: [],
+      currentTagInput: '',
+      albumArtwork: null,
+      albumArtworkPath: undefined,
+      albumArtworkCachePath: undefined,
+    });
+    setExportSettings(prev => ({ ...prev, outputPath: '' }));
+    setSavedCount(0);
+    setWizardStep(1);
+  };
+
+
   return (
-    <div class="flex h-screen min-w-[980px] bg-zinc-100">
-      {/* サイドバー */}
-      <Sidebar
-        mode={mode}
-        albumData={albumData}
-        artworkSourceLabel={getArtworkSourceLabel()}
-        getChipColor={getChipColor}
-        onSelectArtwork={handleSelectArtworkFile}
-        onClearArtwork={handleClearAlbumArtwork}
-        onAlbumFieldChange={handleAlbumFieldChange}
-        onTagInput={handleTagInput}
-        onTagKeyDown={handleTagKeyDown}
-        onRemoveTag={removeTag}
-      />
+    <div class={`flex h-screen bg-zinc-100 ${mode === 'advanced' ? 'min-w-[980px]' : ''}`}>
+      {mode === 'advanced' && (
+        <Sidebar
+          mode={mode}
+          albumData={albumData}
+          artworkSourceLabel={getArtworkSourceLabel()}
+          getChipColor={getChipColor}
+          onSelectArtwork={handleSelectArtworkFile}
+          onClearArtwork={handleClearAlbumArtwork}
+          onAlbumFieldChange={handleAlbumFieldChange}
+          onTagInput={handleTagInput}
+          onTagKeyDown={handleTagKeyDown}
+          onRemoveTag={removeTag}
+        />
+      )}
 
       {/* メインコンテンツ */}
       <main class="flex min-w-0 flex-1 flex-col bg-white">
@@ -1684,7 +1773,7 @@ function App() {
           hasTracks={tracks.length > 0}
           isFfmpegReady={isFfmpegReady}
           isUpdateChecking={isUpdateChecking}
-          onModeChange={setMode}
+          onModeChange={handleModeChange}
           onSort={handleSort}
           onPickAudioFiles={handlePickAudioFiles}
           onPickDirectories={handlePickDirectories}
@@ -1695,10 +1784,6 @@ function App() {
           onExport={handleExport}
         />
 
-        {mode === 'simple' && (
-          <StepIndicator currentStep={showExportDialog || convertProgress ? 3 : tracks.length > 0 ? 2 : 1} />
-        )}
-
         <FfmpegBanner
           setup={ffmpegSetup}
           installLog={ffmpegInstallLog}
@@ -1706,39 +1791,83 @@ function App() {
           onRetry={() => { void ensureFfmpegReady(); }}
         />
 
-        <TrackTable
-          mode={mode}
-          tracks={tracks}
-          isProcessing={isProcessing}
-          isFfmpegReady={isFfmpegReady}
-          getChipColor={getChipColor}
-          onPickAudioFiles={handlePickAudioFiles}
-          onPickDirectories={handlePickDirectories}
-          onTrackDelete={handleTrackDelete}
-          onTrackChange={handleTrackChange}
-          onNumberInput={handleNumberInput}
-          onPadNumber={padNumber}
-          onArtistInput={handleArtistInput}
-          onArtistPaste={handleArtistPaste}
-          onArtistKeyDown={handleArtistKeyDown}
-          onCopyArtist={copyArtist}
-          onRemoveArtist={removeArtistTag}
-          onCopyAllArtists={copyAllArtists}
-        />
+        {mode === 'simple' ? (
+          <SimpleWizard
+            wizardStep={wizardStep}
+            tracks={tracks}
+            albumData={albumData}
+            exportSettings={exportSettings}
+            artworkSourceLabel={getArtworkSourceLabel()}
+            isProcessing={isProcessing}
+            isFfmpegReady={isFfmpegReady}
+            savedCount={savedCount}
+            getChipColor={getChipColor}
+            onStepChange={setWizardStep}
+            onPickAudioFiles={handlePickAudioFiles}
+            onPickDirectories={handlePickDirectories}
+            onSelectArtwork={handleSelectArtworkFile}
+            onClearArtwork={handleClearAlbumArtwork}
+            onAlbumFieldChange={handleAlbumFieldChange}
+            onTagInput={handleTagInput}
+            onTagKeyDown={handleTagKeyDown}
+            onRemoveTag={removeTag}
+            onTrackDelete={handleTrackDelete}
+            onTrackChange={handleTrackChange}
+            onNumberInput={handleNumberInput}
+            onPadNumber={padNumber}
+            onArtistInput={handleArtistInput}
+            onArtistPaste={handleArtistPaste}
+            onArtistKeyDown={handleArtistKeyDown}
+            onCopyArtist={copyArtist}
+            onRemoveArtist={removeArtistTag}
+            onCopyAllArtists={copyAllArtists}
+            onApplyVoiceActorsToAll={applyVoiceActorsToAllTracks}
+            onCopyVoiceActorsFromPrevious={copyVoiceActorsFromPreviousTrack}
+            onCopyFirstTrackVoiceActorsToAll={copyFirstTrackVoiceActorsToAll}
+            onSelectOutputFolder={handleSelectOutputFolder}
+            onExport={() => { void handleSimpleExport(); }}
+            onStartOver={handleStartOver}
+          />
+        ) : (
+          <TrackTable
+            mode={mode}
+            tracks={tracks}
+            isProcessing={isProcessing}
+            isFfmpegReady={isFfmpegReady}
+            getChipColor={getChipColor}
+            onPickAudioFiles={handlePickAudioFiles}
+            onPickDirectories={handlePickDirectories}
+            onTrackDelete={handleTrackDelete}
+            onTrackChange={handleTrackChange}
+            onNumberInput={handleNumberInput}
+            onPadNumber={padNumber}
+            onArtistInput={handleArtistInput}
+            onArtistPaste={handleArtistPaste}
+            onArtistKeyDown={handleArtistKeyDown}
+            onCopyArtist={copyArtist}
+            onRemoveArtist={removeArtistTag}
+            onCopyAllArtists={copyAllArtists}
+            onApplyVoiceActorsToAll={applyVoiceActorsToAllTracks}
+            onCopyVoiceActorsFromPrevious={copyVoiceActorsFromPreviousTrack}
+            onCopyFirstTrackVoiceActorsToAll={copyFirstTrackVoiceActorsToAll}
+          />
+        )}
       </main>
 
-      {/* 出力設定ダイアログ */}
-      <ExportDialog
-        mode={mode}
-        isOpen={showExportDialog}
-        settings={exportSettings}
-        qualityOptions={getQualityOptions(exportSettings.format)}
-        onSettingsChange={setExportSettings}
-        onFormatChange={handleFormatChange}
-        onSelectOutputFolder={handleSelectOutputFolder}
-        onCancel={() => setShowExportDialog(false)}
-        onExport={handleActualExport}
-      />
+      {/* 出力設定ダイアログ（詳細モード専用） */}
+      {mode === 'advanced' && (
+        <ExportDialog
+          mode={mode}
+          isOpen={showExportDialog}
+          settings={exportSettings}
+          qualityOptions={getQualityOptions(exportSettings.format)}
+          onSettingsChange={setExportSettings}
+          onFormatChange={handleFormatChange}
+          onSelectOutputFolder={handleSelectOutputFolder}
+          onCancel={() => setShowExportDialog(false)}
+          onExport={() => { void handleActualExport(false); }}
+        />
+      )}
 
       {/* About / Legal ダイアログ */}
       <AboutDialog

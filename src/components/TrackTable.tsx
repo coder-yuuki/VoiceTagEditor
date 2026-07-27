@@ -1,4 +1,5 @@
-import { AlertTriangle, Clipboard, FileAudio, FolderOpen, Trash2, Upload, X } from 'lucide-preact';
+import { useState } from 'preact/hooks';
+import { AlertTriangle, ArrowDownToLine, Clipboard, Copy, FileAudio, FolderOpen, Trash2, Upload, X } from 'lucide-preact';
 import type { AppMode, ChipColor, Track } from '../types';
 
 interface TrackTableProps {
@@ -19,6 +20,9 @@ interface TrackTableProps {
   onCopyArtist: (artist: string) => void;
   onRemoveArtist: (trackId: string, artist: string) => void;
   onCopyAllArtists: (artists: string[]) => void;
+  onApplyVoiceActorsToAll: (input: string) => void;
+  onCopyVoiceActorsFromPrevious: (trackId: string) => void;
+  onCopyFirstTrackVoiceActorsToAll: () => void;
 }
 
 function numberKey(track: Track): string | null {
@@ -48,7 +52,11 @@ export function TrackTable({
   onCopyArtist,
   onRemoveArtist,
   onCopyAllArtists,
+  onApplyVoiceActorsToAll,
+  onCopyVoiceActorsFromPrevious,
+  onCopyFirstTrackVoiceActorsToAll,
 }: TrackTableProps) {
+  const [bulkVoiceActorInput, setBulkVoiceActorInput] = useState('');
   const simple = mode === 'simple';
   const numberCounts = new Map<string, number>();
   for (const track of tracks) {
@@ -62,6 +70,20 @@ export function TrackTable({
       .filter(([, count]) => count > 1)
       .map(([key]) => key),
   );
+  const hasFirstTrackVoiceActors = tracks[0]?.artists.length > 0;
+  const bulkToolbarTop = simple && duplicateKeys.size > 0 ? 'top-[41px]' : 'top-0';
+
+  const handleBulkApply = () => {
+    onApplyVoiceActorsToAll(bulkVoiceActorInput);
+    setBulkVoiceActorInput('');
+  };
+
+  const handleBulkKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleBulkApply();
+    }
+  };
 
   if (tracks.length === 0 && !isProcessing) {
     return (
@@ -120,20 +142,59 @@ export function TrackTable({
           同じディスク番号・トラック番号があります。黄色の行を確認してください。保存はそのまま続けられます。
         </div>
       )}
+      <div class={`sticky z-20 border-b border-zinc-200 bg-zinc-50 px-5 py-3 ${bulkToolbarTop}`}>
+        <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <span class="shrink-0 text-sm font-semibold text-zinc-800">声優の一括入力</span>
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={bulkVoiceActorInput}
+              onInput={(event) => setBulkVoiceActorInput(event.currentTarget.value)}
+              onKeyDown={handleBulkKeyDown}
+              placeholder="声優名（カンマ・セミコロン区切り）"
+              class="min-w-[16rem] flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+            <button
+              type="button"
+              onClick={handleBulkApply}
+              disabled={!bulkVoiceActorInput.trim()}
+              class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ArrowDownToLine size={15} />
+              全トラックに適用
+            </button>
+            {hasFirstTrackVoiceActors && (
+              <button
+                type="button"
+                onClick={onCopyFirstTrackVoiceActorsToAll}
+                class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                title="1曲目に入力した声優を、すべてのトラックにコピーします"
+              >
+                <Copy size={15} />
+                先頭トラックを全件にコピー
+              </button>
+            )}
+          </div>
+        </div>
+        <p class="mt-2 text-xs leading-5 text-zinc-500">
+          各トラックでは「上と同じ」ボタンで、1つ上のトラックの声優をコピーできます。
+        </p>
+      </div>
       <table class="w-full table-fixed divide-y divide-zinc-200">
-        <thead class={`sticky z-10 bg-zinc-50 shadow-sm ${simple && duplicateKeys.size > 0 ? 'top-[41px]' : 'top-0'}`}>
+        <thead class={`sticky z-10 bg-zinc-50 shadow-sm ${simple && duplicateKeys.size > 0 ? 'top-[109px]' : 'top-[68px]'}`}>
           <tr>
             <th class="w-16 px-3 py-3 text-center text-xs font-semibold text-zinc-500">削除</th>
             <th class="w-24 px-3 py-3 text-center text-xs font-semibold text-zinc-500">ディスク番号</th>
             <th class="w-28 px-3 py-3 text-center text-xs font-semibold text-zinc-500">トラック番号</th>
             <th class="w-80 px-4 py-3 text-left text-xs font-semibold text-zinc-500">タイトル</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500">アーティスト</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500">声優</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-zinc-100 bg-white">
-          {tracks.map((track) => {
+          {tracks.map((track, index) => {
             const key = numberKey(track);
             const hasDuplicate = key ? duplicateKeys.has(key) : false;
+            const canCopyFromAbove = index > 0 && tracks[index - 1].artists.length > 0;
 
             return (
               <tr
@@ -242,7 +303,7 @@ export function TrackTable({
                         onInput={(event) => onArtistInput(track.id, event.currentTarget.value)}
                         onPaste={(event) => onArtistPaste(track.id, event)}
                         onKeyDown={(event) => onArtistKeyDown(track.id, event)}
-                        placeholder={track.artists.length === 0 ? 'アーティスト名を入力してEnter' : '続けて入力'}
+                        placeholder={track.artists.length === 0 ? '声優名を入力してEnter' : '続けて入力'}
                         class="min-w-[150px] flex-1 bg-transparent py-0.5 text-sm outline-none placeholder:text-zinc-400"
                       />
                     </div>
@@ -252,16 +313,38 @@ export function TrackTable({
                         type="button"
                         onClick={() => onCopyAllArtists(track.artists)}
                         class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
-                        title="アーティスト名をまとめてコピー"
+                        title="声優名をまとめてコピー"
                       >
                         <Clipboard size={15} />
                       </button>
                     )}
                   </div>
                   {simple && (
-                    <p class="mt-1 text-[11px] leading-4 text-zinc-500">
-                      Enterで追加します。カンマで区切ると複数まとめて登録できます。
-                    </p>
+                    <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <p class="text-[11px] leading-4 text-zinc-500">
+                        Enterで追加。カンマ区切りで複数登録できます。
+                      </p>
+                      {canCopyFromAbove && (
+                        <button
+                          type="button"
+                          onClick={() => onCopyVoiceActorsFromPrevious(track.id)}
+                          class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                        >
+                          <Copy size={11} />
+                          上と同じ
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!simple && canCopyFromAbove && (
+                    <button
+                      type="button"
+                      onClick={() => onCopyVoiceActorsFromPrevious(track.id)}
+                      class="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      <Copy size={11} />
+                      上のトラックと同じ
+                    </button>
                   )}
                 </td>
               </tr>

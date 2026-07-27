@@ -1,15 +1,11 @@
 import { useState } from 'preact/hooks';
 import {
   ChevronDown,
-  FolderOpen,
   HelpCircle,
   Info,
   MoreHorizontal,
   RefreshCw,
-  Save,
-  SortAsc,
   Trash2,
-  Upload,
 } from 'lucide-preact';
 import type { AppMode } from '../types';
 
@@ -46,6 +42,7 @@ export function AppToolbar({
 }: AppToolbarProps) {
   const [showMenu, setShowMenu] = useState(false);
   const commonButtonClass = 'inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50';
+  const simple = mode === 'simple';
 
   const runMenuAction = (action: () => void) => {
     setShowMenu(false);
@@ -56,44 +53,43 @@ export function AppToolbar({
     <header class="shrink-0 border-b border-zinc-200 bg-white px-4 py-3">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="mr-2 hidden min-w-0 xl:block">
+          <div class="mr-2 min-w-0">
             <div class="truncate text-sm font-bold text-zinc-900">VoiceTagEditor</div>
-            {mode === 'simple' && (
+            {simple && (
               <div class="truncate text-[11px] text-zinc-500">音声の情報を整えて保存</div>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onPickAudioFiles}
-            disabled={!isFfmpegReady}
-            class={commonButtonClass}
-            title={isFfmpegReady ? '音声ファイルを追加' : '音声機能の準備が終わるまでお待ちください'}
-          >
-            <Upload size={16} />
-            <span>ファイルを追加</span>
-          </button>
-          <button
-            type="button"
-            onClick={onPickDirectories}
-            disabled={!isFfmpegReady}
-            class={commonButtonClass}
-            title={isFfmpegReady ? 'フォルダ内の音声をまとめて追加' : '音声機能の準備が終わるまでお待ちください'}
-          >
-            <FolderOpen size={16} />
-            <span>フォルダを追加</span>
-          </button>
+          {!simple && (
+            <>
+              <button
+                type="button"
+                onClick={onPickAudioFiles}
+                disabled={!isFfmpegReady}
+                class={commonButtonClass}
+                title={isFfmpegReady ? '音声ファイルを追加' : '音声機能の準備が終わるまでお待ちください'}
+              >
+                <span>ファイルを追加</span>
+              </button>
+              <button
+                type="button"
+                onClick={onPickDirectories}
+                disabled={!isFfmpegReady}
+                class={commonButtonClass}
+                title={isFfmpegReady ? 'フォルダ内の音声をまとめて追加' : '音声機能の準備が終わるまでお待ちください'}
+              >
+                <span>フォルダを追加</span>
+              </button>
 
-          {(mode === 'advanced' || hasTracks) && (
-            <button type="button" onClick={onSort} disabled={!hasTracks} class={commonButtonClass}>
-              <SortAsc size={16} />
-              <span>{mode === 'simple' ? '番号順に並べ替え' : 'ソート'}</span>
-            </button>
+              <button type="button" onClick={onSort} disabled={!hasTracks} class={commonButtonClass}>
+                <span>ソート</span>
+              </button>
+            </>
           )}
         </div>
 
         <div class="flex shrink-0 flex-wrap items-center gap-2">
-          {mode === 'advanced' && (
+          {!simple && (
             <>
               <button
                 type="button"
@@ -131,7 +127,7 @@ export function AppToolbar({
             <HelpCircle size={17} />
           </button>
 
-          {mode === 'simple' && (
+          {simple && (
             <div class="relative">
               <button
                 type="button"
@@ -198,16 +194,17 @@ export function AppToolbar({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={!hasTracks || !isFfmpegReady}
-            class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            title={!isFfmpegReady ? '音声機能の準備が終わるまでお待ちください' : !hasTracks ? '先に音声ファイルを追加してください' : '編集した音声を保存'}
-          >
-            <Save size={17} />
-            <span>保存</span>
-          </button>
+          {!simple && (
+            <button
+              type="button"
+              onClick={onExport}
+              disabled={!hasTracks || !isFfmpegReady}
+              class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title={!isFfmpegReady ? '音声機能の準備が終わるまでお待ちください' : !hasTracks ? '先に音声ファイルを追加してください' : '編集した音声を保存'}
+            >
+              <span>保存</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

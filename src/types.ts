@@ -113,3 +113,5 @@ export interface ChipColor {
 }
 
 export type AppMode = 'simple' | 'advanced';
+
+export type WizardStep = 1 | 2 | 3 | 4 | 'complete';
