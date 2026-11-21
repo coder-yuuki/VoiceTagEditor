@@ -1,6 +1,7 @@
-use tauri_plugin_fs::init as init_fs;
+use std::path::Path;
 use tauri_plugin_dialog::init as init_dialog;
-use tauri_plugin_opener::init as init_opener;
+use tauri_plugin_fs::init as init_fs;
+use tauri_plugin_opener::{init as init_opener, OpenerExt};
 
 mod models;
 mod metadata;
@@ -23,6 +24,29 @@ fn restart_app(app: tauri::AppHandle) {
     app.restart();
 }
 
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Folder path is empty".to_string());
+    }
+
+    let raw_path = Path::new(trimmed);
+    let target_dir = if raw_path.is_file() {
+        raw_path.parent().unwrap_or(raw_path)
+    } else {
+        raw_path
+    };
+
+    if !target_dir.exists() {
+        return Err(format!("Folder does not exist: {}", target_dir.display()));
+    }
+
+    app.opener()
+        .open_path(target_dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| format!("Failed to open folder: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -38,6 +62,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             restart_app,
+            open_folder,
             system_check::check_ffmpeg,
             system_check::ensure_ffmpeg_installed,
             metadata::extract_metadata,

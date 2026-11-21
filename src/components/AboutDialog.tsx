@@ -1,8 +1,10 @@
+import { useEffect } from 'preact/hooks';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { X } from 'lucide-preact';
 import licenseText from '../../LICENSE?raw';
 import thirdPartyNoticesText from '../../THIRD-PARTY-NOTICES.md?raw';
 import privacyPolicyText from '../../PRIVACY.md?raw';
+import { useI18n } from '../i18n';
 import type { AppMode } from '../types';
 
 export type AboutTab = 'overview' | 'license' | 'thirdParty' | 'privacy';
@@ -26,31 +28,50 @@ export function AboutDialog({
   onTabChange,
   onClose,
 }: AboutDialogProps) {
+  const { t, locale } = useI18n();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) {
     return null;
   }
 
   const tabClass = (tab: AboutTab) => (
-    `px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${activeTab === tab
-      ? 'bg-blue-600 text-white border-blue-600'
-      : 'bg-white text-zinc-700 border-zinc-300 hover:bg-zinc-50 hover:border-zinc-400'
+    `rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${activeTab === tab
+      ? 'border-blue-600 bg-blue-600 text-white'
+      : 'border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50'
     }`
   );
 
   return (
-    <div class="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
-      <div class="bg-white rounded-xl shadow-2xl w-[720px] max-w-[95vw] max-h-[90vh] overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
-        <div class="px-6 pt-6 pb-4 border-b border-zinc-100 flex items-start justify-between gap-4">
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="max-h-[90vh] w-[720px] max-w-[95vw] scale-100 overflow-hidden rounded-2xl bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+        <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 pb-4 pt-6">
           <div>
-            <h2 class="text-lg font-semibold text-zinc-800">このアプリについて</h2>
-            <div class="text-xs text-zinc-500 mt-1">
+            <h2 class="text-lg font-semibold text-zinc-800">{t.about.title}</h2>
+            <div class="mt-1 text-xs text-zinc-500">
               {appName}{appVersion ? ` v${appVersion}` : ''}
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            class="p-2 -mr-2 -mt-2 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
-            aria-label="閉じる"
+            class="-mr-2 -mt-2 rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+            aria-label={t.common.close}
           >
             <X size={16} />
           </button>
@@ -58,80 +79,91 @@ export function AboutDialog({
 
         <div class="px-6 pt-4">
           <div class="flex flex-wrap gap-2">
-            <button onClick={() => onTabChange('overview')} class={tabClass('overview')}>
-              概要
+            <button type="button" onClick={() => onTabChange('overview')} class={tabClass('overview')}>
+              {t.about.tabOverview}
             </button>
-            <button onClick={() => onTabChange('license')} class={tabClass('license')}>
-              ライセンス
+            <button type="button" onClick={() => onTabChange('license')} class={tabClass('license')}>
+              {t.about.tabLicense}
             </button>
-            <button onClick={() => onTabChange('thirdParty')} class={tabClass('thirdParty')}>
-              サードパーティ
+            <button type="button" onClick={() => onTabChange('thirdParty')} class={tabClass('thirdParty')}>
+              {t.about.tabThirdParty}
             </button>
-            <button onClick={() => onTabChange('privacy')} class={tabClass('privacy')}>
-              プライバシー
+            <button type="button" onClick={() => onTabChange('privacy')} class={tabClass('privacy')}>
+              {t.about.tabPrivacy}
             </button>
           </div>
         </div>
 
-        <div class="px-6 pb-6 pt-4 overflow-auto max-h-[70vh]">
+        <div class="max-h-[65vh] overflow-auto px-6 pb-6 pt-4">
           {activeTab === 'overview' && (
             <div class="space-y-4 text-sm text-zinc-700">
               <div class="space-y-1">
-                <div class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">製作者</div>
+                <div class="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  {t.about.authorLabel}
+                </div>
                 <div>Noguchi Yuuki</div>
               </div>
 
               <div class="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => { void openUrl('https://github.com/iLickeyPro/VoiceTagEditor').catch(() => { }); }}
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-all hover:border-zinc-400 hover:bg-zinc-50"
                 >
                   GitHub
                 </button>
                 <button
+                  type="button"
                   onClick={() => { void openUrl('https://github.com/iLickeyPro/VoiceTagEditor/issues').catch(() => { }); }}
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-zinc-300 rounded-md bg-white text-zinc-700 text-xs font-medium hover:bg-zinc-50 hover:border-zinc-400 transition-all shadow-sm"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-all hover:border-zinc-400 hover:bg-zinc-50"
                 >
                   Issues
                 </button>
               </div>
 
-              <div class="text-xs text-zinc-600 leading-relaxed">
+              <div class="text-xs leading-relaxed text-zinc-600">
                 <p>
-                  {mode === 'simple'
-                    ? '本アプリはパソコンの中だけで動作します。音声を扱うために必要な機能は、初回にアプリが自動で準備します。'
-                    : '本アプリはローカル環境で動作し、音声ファイルの解析・変換には OS にインストール済みの FFmpeg を利用します。'}
+                  {mode === 'simple' ? t.about.overviewSimple : t.about.overviewAdvanced}
                 </p>
-                <p class="mt-1">データの外部送信は行いません（詳細は「プライバシー」タブを参照してください）。</p>
+                <p class="mt-1">{t.about.privacyNote}</p>
               </div>
             </div>
           )}
 
           {activeTab === 'license' && (
-            <pre class="whitespace-pre-wrap text-xs text-zinc-700 font-mono bg-zinc-50 border border-zinc-200 rounded-lg p-4">
+            <pre class="whitespace-pre-wrap rounded-lg border border-zinc-200 bg-zinc-50 p-4 font-mono text-xs text-zinc-700">
               {licenseText}
             </pre>
           )}
 
           {activeTab === 'thirdParty' && (
-            <pre class="whitespace-pre-wrap text-xs text-zinc-700 font-mono bg-zinc-50 border border-zinc-200 rounded-lg p-4">
+            <pre class="whitespace-pre-wrap rounded-lg border border-zinc-200 bg-zinc-50 p-4 font-mono text-xs text-zinc-700">
               {thirdPartyNoticesText}
             </pre>
           )}
 
           {activeTab === 'privacy' && (
-            <pre class="whitespace-pre-wrap text-xs text-zinc-700 font-mono bg-zinc-50 border border-zinc-200 rounded-lg p-4">
-              {privacyPolicyText}
-            </pre>
+            <div class="space-y-3">
+              {locale !== 'ja' && (
+                <div class="rounded-lg border border-blue-100 bg-blue-50/70 p-3.5 text-xs leading-relaxed text-blue-950">
+                  <div class="font-semibold">{t.about.privacySummaryTitle}</div>
+                  <p class="mt-1 text-blue-900">{t.about.privacySummaryBody}</p>
+                </div>
+              )}
+              <pre class="whitespace-pre-wrap rounded-lg border border-zinc-200 bg-zinc-50 p-4 font-mono text-xs text-zinc-700">
+                {privacyPolicyText}
+              </pre>
+            </div>
           )}
         </div>
 
-        <div class="px-6 pb-6 flex justify-end">
+        <div class="flex justify-end border-t border-zinc-100 px-6 py-4">
           <button
+            type="button"
             onClick={onClose}
-            class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
+            class="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-700 transition-colors hover:bg-zinc-50"
           >
-            閉じる
+            {t.common.close}
           </button>
         </div>
       </div>

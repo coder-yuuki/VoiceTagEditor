@@ -1,5 +1,7 @@
+import { useI18n } from '../i18n';
 import type { AlbumData, AppMode, ChipColor } from '../types';
 import { AlbumInfoForm } from './AlbumInfoForm';
+import { InfoHint } from './Tooltip';
 
 interface SidebarProps {
   mode: AppMode;
@@ -26,17 +28,13 @@ export function Sidebar({
   onTagKeyDown,
   onRemoveTag,
 }: SidebarProps) {
-  const simple = mode === 'simple';
+  const { t } = useI18n();
 
   return (
-    <aside class={`${simple ? 'w-[340px]' : 'w-80'} flex shrink-0 flex-col gap-4 overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4`}>
-      <div>
-        <h2 class="text-sm font-bold text-zinc-900">音声作品の情報</h2>
-        {simple && (
-          <p class="mt-1 text-xs leading-5 text-zinc-500">
-            読み込んだ音声すべてに共通する情報です。分かるところだけ入力すれば大丈夫です。
-          </p>
-        )}
+    <aside class="flex w-72 shrink-0 flex-col gap-3.5 overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4">
+      <div class="flex items-center gap-1.5">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-zinc-600">{t.sidebar.title}</h2>
+        <InfoHint text={t.sidebar.simpleDescription} position="bottom" align="left" />
       </div>
 
       <AlbumInfoForm

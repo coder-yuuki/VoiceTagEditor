@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from "preact/hooks";
-import { confirm, message, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { getName, getVersion } from "@tauri-apps/api/app";
-import { listen } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { check } from "@tauri-apps/plugin-updater";
 import { AboutDialog, type AboutTab } from './components/AboutDialog';
 import { AppDialog, type AppDialogOptions } from './components/AppDialog';
 import { AppToolbar } from './components/AppToolbar';
+import { DragDropOverlay } from './components/DragDropOverlay';
 import { ExportDialog } from './components/ExportDialog';
 import { FfmpegBanner } from './components/FfmpegBanner';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ProcessingOverlay } from './components/ProcessingOverlay';
 import { Sidebar } from './components/Sidebar';
 import { SimpleWizard } from './components/SimpleWizard';
+import { ToastContainer, type ToastItem } from './components/ToastContainer';
 import { TrackTable } from './components/TrackTable';
+import { useI18n } from './i18n';
 import type {
   AlbumData,
   AppMode,
@@ -24,7 +27,6 @@ import type {
   FfmpegInstallProgress,
   FfmpegInstallResult,
   FfmpegSetupState,
-  OnboardingStep,
   ProgressEvent,
   QualityOption,
   Track,
@@ -33,6 +35,50 @@ import type {
 import "./App.css";
 
 const MODE_STORAGE_KEY = 'vte_display_mode_v1';
+const EXPORT_SETTINGS_STORAGE_KEY = 'vte_export_settings_v1';
+const MAX_HISTORY_SIZE = 50;
+
+interface EditorSnapshot {
+  tracks: Track[];
+  albumData: AlbumData;
+  wizardStep?: WizardStep;
+}
+
+const cloneSnapshot = (tracks: Track[], albumData: AlbumData, wizardStep?: WizardStep): EditorSnapshot => ({
+  tracks: tracks.map((track) => ({ ...track, artists: [...track.artists] })),
+  albumData: { ...albumData, tags: [...albumData.tags] },
+  wizardStep,
+});
+
+const loadInitialExportSettings = (): ExportSettings => {
+  const defaults: ExportSettings = {
+    outputPath: '',
+    overwriteMode: 'rename',
+    format: 'MP3',
+    quality: 'high',
+    encodeMode: 'reencode',
+  };
+  try {
+    const raw = localStorage.getItem(EXPORT_SETTINGS_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<ExportSettings>;
+    return {
+      outputPath: typeof parsed.outputPath === 'string' ? parsed.outputPath : defaults.outputPath,
+      overwriteMode: defaults.overwriteMode,
+      format: parsed.format === 'MP3' || parsed.format === 'M4A'
+        ? parsed.format
+        : defaults.format,
+      quality: parsed.quality === 'highest' || parsed.quality === 'high' || parsed.quality === 'medium' || parsed.quality === 'low'
+        ? parsed.quality
+        : defaults.quality,
+      encodeMode: parsed.encodeMode === 'reencode' || parsed.encodeMode === 'copy'
+        ? parsed.encodeMode
+        : defaults.encodeMode,
+    };
+  } catch {
+    return defaults;
+  }
+};
 
 const compareTracksByNumber = (a: Track, b: Track): number => {
   const diskDifference = (Number.parseInt(a.diskNumber, 10) || 0)
@@ -45,7 +91,19 @@ const compareTracksByNumber = (a: Track, b: Track): number => {
     - (Number.parseInt(b.trackNumber, 10) || 0);
 };
 
+const getParentDirectory = (filePath: string): string => {
+  const normalized = filePath.replace(/[\\/]+$/, '');
+  const lastSep = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
+  return lastSep > 0 ? normalized.slice(0, lastSep) : normalized;
+};
+
 function App() {
+  const { t, fmt } = useI18n();
+  const tRef = useRef(t);
+  const fmtRef = useRef(fmt);
+  tRef.current = t;
+  fmtRef.current = fmt;
+
   const [mode, setMode] = useState<AppMode>(() => {
     try {
       return localStorage.getItem(MODE_STORAGE_KEY) === 'advanced' ? 'advanced' : 'simple';
@@ -55,6 +113,7 @@ function App() {
   });
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [savedCount, setSavedCount] = useState(0);
+  const [lastSavedFolderPath, setLastSavedFolderPath] = useState('');
   const [albumData, setAlbumData] = useState<AlbumData>({
     albumArtwork: null,
     albumTitle: "",
@@ -65,45 +124,33 @@ function App() {
   });
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<ProgressEvent | null>(null);
   const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
-
-  // 完了数を追跡（並列処理でイベントが前後するため）
   const [completedCount, setCompletedCount] = useState(0);
-
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  // 出力設定の状態管理
-  const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportSettings, setExportSettings] = useState<ExportSettings>({
-    outputPath: '',
-    overwriteMode: 'rename',
-    format: 'MP3',
-    quality: 'high',
-    encodeMode: 'reencode',
-  });
+  // Export settings (persisted across sessions)
+  const [exportDraft, setExportDraft] = useState<ExportSettings | null>(null);
+  const [exportSettings, setExportSettings] = useState<ExportSettings>(loadInitialExportSettings);
 
-  // オンボーディング
+  // Undo / Redo history
+  const tracksRef = useRef(tracks);
+  const albumDataRef = useRef(albumData);
+  const wizardStepRef = useRef(wizardStep);
+  const isImportingRef = useRef(false);
+  tracksRef.current = tracks;
+  albumDataRef.current = albumData;
+  wizardStepRef.current = wizardStep;
+  const pastHistoryRef = useRef<EditorSnapshot[]>([]);
+  const futureHistoryRef = useRef<EditorSnapshot[]>([]);
+  const lastHistoryGroupRef = useRef<{ key: string; timestamp: number } | null>(null);
+  const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
+
+  // Onboarding
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [onboardingStep, setOnboardingStep] = useState<number>(0);
-  const onboardingSteps: OnboardingStep[] = [
-    {
-      title: '音声を選ぶ',
-      desc: '「ファイルを選ぶ」または「フォルダを選ぶ」から音声を追加します。画面へドラッグ＆ドロップしても追加できます。'
-    },
-    {
-      title: '音声作品の情報を入力する',
-      desc: 'カバー画像・音声作品名・サークル名など、作品全体の情報を入力します。分かるところだけで大丈夫です。'
-    },
-    {
-      title: 'トラックを確認する',
-      desc: '各トラックのタイトルや番号を確認し、必要なところだけ書き換えます。'
-    },
-    {
-      title: '保存する',
-      desc: '保存先フォルダを選んで「保存を開始」を押します。おすすめ設定が自動で使われます。'
-    }
-  ];
 
   // About / Legal
   const [showAbout, setShowAbout] = useState<boolean>(false);
@@ -113,17 +160,47 @@ function App() {
   const [appDialog, setAppDialog] = useState<AppDialogOptions | null>(null);
   const appDialogResolver = useRef<((confirmed: boolean) => void) | null>(null);
 
-  // Updater
+  // Updater & FFmpeg
   const [isUpdateChecking, setIsUpdateChecking] = useState<boolean>(false);
   const isUpdateCheckingRef = useRef(false);
   const [ffmpegSetup, setFfmpegSetup] = useState<FfmpegSetupState>({
     status: 'idle',
-    message: ''
+    message: '',
   });
   const [ffmpegInstallLog, setFfmpegInstallLog] = useState<FfmpegInstallProgress[]>([]);
   const ffmpegSetupPromise = useRef<Promise<FfmpegInstallResult> | null>(null);
   const ffmpegReadyRef = useRef(false);
   const isFfmpegReady = ffmpegSetup.status === 'ready';
+
+  const toastTimersRef = useRef<Map<string, number>>(new Map());
+
+  const dismissToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const showToast = useCallback((messageText: string, tone: ToastItem['tone'] = 'info') => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts((prev) => [...prev.slice(-2), { id, message: messageText, tone }]);
+    const timer = window.setTimeout(() => {
+      toastTimersRef.current.delete(id);
+      setToasts((prev) => prev.filter((item) => item.id !== id));
+    }, 2800);
+    toastTimersRef.current.set(id, timer);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of toastTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      toastTimersRef.current.clear();
+    };
+  }, []);
 
   const showAppDialog = useCallback((options: AppDialogOptions): Promise<boolean> => {
     if (appDialogResolver.current) {
@@ -135,12 +212,22 @@ function App() {
     });
   }, []);
 
-  const handleAppDialogResult = (confirmed: boolean) => {
+  const handleAppDialogResult = useCallback((confirmed: boolean) => {
     const resolver = appDialogResolver.current;
     appDialogResolver.current = null;
     setAppDialog(null);
     resolver?.(confirmed);
-  };
+  }, []);
+
+  const handleOpenOutputFolder = useCallback(async (folderPath: string) => {
+    if (!folderPath) return;
+    try {
+      await invoke<void>('open_folder', { path: folderPath });
+    } catch (error) {
+      console.error('Failed to open output folder:', error);
+      showToast(tRef.current.toast.openFolderFailed, 'warning');
+    }
+  }, [showToast]);
 
   useEffect(() => {
     (async () => {
@@ -149,13 +236,115 @@ function App() {
     })();
   }, []);
 
+  const syncHistoryAvailability = useCallback(() => {
+    setHistoryAvailability({
+      canUndo: pastHistoryRef.current.length > 0,
+      canRedo: futureHistoryRef.current.length > 0,
+    });
+  }, []);
+
+  const pushHistory = useCallback((groupKey?: string, step?: WizardStep) => {
+    const now = Date.now();
+    if (groupKey && lastHistoryGroupRef.current) {
+      const { key, timestamp } = lastHistoryGroupRef.current;
+      if (key === groupKey && now - timestamp < 800) {
+        lastHistoryGroupRef.current = { key: groupKey, timestamp: now };
+        return;
+      }
+    }
+
+    const snapshot = cloneSnapshot(tracksRef.current, albumDataRef.current, step);
+    pastHistoryRef.current = [...pastHistoryRef.current.slice(-(MAX_HISTORY_SIZE - 1)), snapshot];
+    futureHistoryRef.current = [];
+    lastHistoryGroupRef.current = groupKey ? { key: groupKey, timestamp: now } : null;
+    syncHistoryAvailability();
+  }, [syncHistoryAvailability]);
+
+  const handleUndo = useCallback(() => {
+    if (isImportingRef.current) return;
+    const previous = pastHistoryRef.current.pop();
+    if (!previous) return;
+
+    const current = cloneSnapshot(
+      tracksRef.current,
+      albumDataRef.current,
+      previous.wizardStep === undefined ? undefined : wizardStepRef.current,
+    );
+    futureHistoryRef.current.push(current);
+    lastHistoryGroupRef.current = null;
+    setTracks(previous.tracks);
+    setAlbumData(previous.albumData);
+    if (previous.wizardStep !== undefined) setWizardStep(previous.wizardStep);
+    syncHistoryAvailability();
+    showToast(tRef.current.toast.undone, 'info');
+  }, [showToast, syncHistoryAvailability]);
+
+  const handleRedo = useCallback(() => {
+    if (isImportingRef.current) return;
+    const next = futureHistoryRef.current.pop();
+    if (!next) return;
+
+    const current = cloneSnapshot(
+      tracksRef.current,
+      albumDataRef.current,
+      next.wizardStep === undefined ? undefined : wizardStepRef.current,
+    );
+    pastHistoryRef.current.push(current);
+    lastHistoryGroupRef.current = null;
+    setTracks(next.tracks);
+    setAlbumData(next.albumData);
+    if (next.wizardStep !== undefined) setWizardStep(next.wizardStep);
+    syncHistoryAvailability();
+    showToast(tRef.current.toast.redone, 'info');
+  }, [showToast, syncHistoryAvailability]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const isEditableField = Boolean(
+        target
+        && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable),
+      );
+      if (isEditableField) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) {
+        if (pastHistoryRef.current.length > 0) {
+          event.preventDefault();
+          handleUndo();
+        }
+      } else if ((key === 'z' && event.shiftKey) || (key === 'y' && !event.metaKey)) {
+        if (futureHistoryRef.current.length > 0) {
+          event.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
   useEffect(() => {
     try {
       localStorage.setItem(MODE_STORAGE_KEY, mode);
     } catch {
-      // localStorageが使えない場合も、現在の起動中は選択したモードを維持する
+      // Ignore storage errors
     }
   }, [mode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(EXPORT_SETTINGS_STORAGE_KEY, JSON.stringify(exportSettings));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [exportSettings]);
 
   const handleModeChange = (newMode: AppMode) => {
     if (newMode === 'simple' && mode === 'advanced') {
@@ -170,18 +359,16 @@ function App() {
     const setupListener = async () => {
       try {
         unlisten = await listen<FfmpegInstallProgress>('ffmpeg-install-progress', (event) => {
-          const message = event.payload.message.replace(/\s+/g, ' ').trim();
-          if (!message) return;
+          const msg = event.payload.message.replace(/\s+/g, ' ').trim();
+          if (!msg) return;
 
-          const progress = {
+          setFfmpegInstallLog((prev) => [...prev.slice(-5), {
             stream: event.payload.stream,
-            message
-          };
-
-          setFfmpegInstallLog(prev => [...prev.slice(-5), progress]);
+            message: msg,
+          }]);
         });
       } catch (error) {
-        console.error('FFmpegインストール進捗リスナーの設定に失敗:', error);
+        console.error('Failed to set up FFmpeg progress listener:', error);
       }
     };
 
@@ -195,14 +382,13 @@ function App() {
   }, []);
 
   const ensureFfmpegReady = useCallback(async (): Promise<boolean> => {
-    const preparingMessage = '音声を扱うための準備中です…（初回のみ、数分かかることがあります）';
-    const failedMessage = '音声変換機能の準備に失敗しました。インターネット接続を確認して、もう一度お試しください。';
+    const tr = tRef.current;
 
     const markReady = (technicalDetail?: string) => {
       ffmpegReadyRef.current = true;
       setFfmpegSetup({
         status: 'ready',
-        message: '音声を扱う準備ができました。',
+        message: tr.ffmpegBanner.ready,
         technicalDetail,
       });
     };
@@ -212,7 +398,7 @@ function App() {
       ffmpegSetupPromise.current = null;
       setFfmpegSetup({
         status: 'failed',
-        message: failedMessage,
+        message: tr.ffmpegBanner.failed,
         technicalDetail: String(error),
       });
     };
@@ -223,7 +409,7 @@ function App() {
 
     setFfmpegSetup({
       status: 'checking',
-      message: preparingMessage,
+      message: tr.ffmpegBanner.preparing,
     });
 
     if (ffmpegSetupPromise.current) {
@@ -247,7 +433,7 @@ function App() {
       const alreadyAvailable = await invoke<boolean>('check_ffmpeg');
       if (alreadyAvailable) {
         setFfmpegInstallLog([]);
-        markReady('FFmpeg / ffprobe を確認しました。');
+        markReady(tr.ffmpegBanner.verifiedDetail);
         return true;
       }
     } catch (error) {
@@ -255,7 +441,7 @@ function App() {
       return false;
     }
 
-    setFfmpegInstallLog([{ stream: 'status', message: 'FFmpegの自動インストールを開始します。' }]);
+    setFfmpegInstallLog([{ stream: 'status', message: tr.ffmpegBanner.autoInstallStart }]);
 
     if (!ffmpegSetupPromise.current) {
       ffmpegSetupPromise.current = invoke<FfmpegInstallResult>('ensure_ffmpeg_installed');
@@ -279,30 +465,40 @@ function App() {
     if (isUpdateCheckingRef.current) return;
     isUpdateCheckingRef.current = true;
     setIsUpdateChecking(true);
+    const tr = tRef.current;
+    const format = fmtRef.current;
     try {
       const update = await check();
       if (!update) {
         if (showNoUpdateDialog) {
-          await confirm('現在のバージョンは最新です。', {
-            title: 'アップデート',
-            kind: 'info'
+          await showAppDialog({
+            title: tr.dialogs.updateUpToDateTitle,
+            message: tr.dialogs.updateUpToDateMessage,
+            confirmLabel: tr.common.ok,
+            tone: 'info',
           });
         }
         return;
       }
 
       const releaseNote = (update.body && String(update.body).trim().length > 0)
-        ? `\n\n変更内容:\n${String(update.body).trim()}`
+        ? format(tr.dialogs.updateReleaseNotesHeader, { notes: String(update.body).trim() })
         : '';
 
-      const ok = await confirm(
-        `新しいバージョンが利用可能です。\n\n現在: v${update.currentVersion}\n最新: v${update.version}${releaseNote}\n\nアップデートしますか？`,
-        { title: 'アップデート', kind: 'info' }
-      );
+      const ok = await showAppDialog({
+        title: tr.dialogs.updateAvailableTitle,
+        message: format(tr.dialogs.updateAvailableMessage, {
+          current: update.currentVersion,
+          latest: update.version,
+          notes: releaseNote,
+        }),
+        confirmLabel: tr.dialogs.updateInstallConfirm,
+        cancelLabel: tr.dialogs.updateLater,
+        tone: 'info',
+      });
       if (!ok) return;
 
       await update.downloadAndInstall((event) => {
-        // ダイアログ中に進捗を更新できないため、ログに出す（必要なら後でUI化）
         if ('data' in event) {
           console.log('[updater]', event.event, event.data);
         } else {
@@ -310,27 +506,30 @@ function App() {
         }
       });
 
-      await message('アップデートを適用しました。アプリを再起動します。', {
-        title: 'アップデート完了',
-        kind: 'info'
+      await showAppDialog({
+        title: tr.dialogs.updateDoneTitle,
+        message: tr.dialogs.updateDoneMessage,
+        confirmLabel: tr.common.ok,
+        tone: 'success',
       });
       try {
         await invoke<void>('restart_app');
       } catch (restartError) {
-        console.warn('アップデート適用後の自動再起動に失敗:', restartError);
-        await message(
-          'アップデートは適用されていますが、自動で再起動できませんでした。アプリを一度終了し、もう一度起動してください。',
-          { title: '再起動が必要です', kind: 'warning' }
-        );
+        console.warn('Auto-restart failed after update:', restartError);
+        await showAppDialog({
+          title: tr.dialogs.updateRestartRequiredTitle,
+          message: tr.dialogs.updateRestartRequiredMessage,
+          confirmLabel: tr.common.ok,
+          tone: 'warning',
+        });
       }
     } catch (e) {
-      // 更新確認に失敗してもアプリは継続（ネットワーク不可/設定未整備など）
-      console.warn('アップデート確認に失敗:', e);
+      console.warn('Update check failed:', e);
       if (showNoUpdateDialog) {
         await showAppDialog({
-          title: '更新を確認できませんでした',
-          message: '新しいバージョンがあるか確認できませんでした。アプリはそのまま使えます。',
-          guidance: 'インターネット接続を確認して、時間を置いてからもう一度お試しください。',
+          title: tr.dialogs.updateCheckFailedTitle,
+          message: tr.dialogs.updateCheckFailedMessage,
+          guidance: tr.dialogs.updateCheckFailedGuidance,
           technicalDetail: String(e),
           tone: 'warning',
         });
@@ -341,7 +540,7 @@ function App() {
     }
   }, [showAppDialog]);
 
-  // 起動時にアップデート確認（更新があるときだけ案内）
+  // Check for updates silently on startup
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -359,38 +558,23 @@ function App() {
     setShowOnboarding(false);
   };
 
-  // フォーマットに応じた音質設定のオプションを取得
-  const getQualityOptions = (format: ExportSettings['format']): QualityOption[] => {
-    switch (format) {
-      case 'MP3':
-      case 'M4A':
-      default:
-        return [
-          { value: 'highest', label: '最高' },
-          { value: 'high', label: '高' },
-          { value: 'medium', label: '中' },
-          { value: 'low', label: '低' }
-        ];
-    }
-  };
+  const getQualityOptions = (_format: ExportSettings['format']): QualityOption[] => [
+    { value: 'highest', label: t.exportDialog.qualityHighest },
+    { value: 'high', label: t.exportDialog.qualityHigh },
+    { value: 'medium', label: t.exportDialog.qualityMedium },
+    { value: 'low', label: t.exportDialog.qualityLow },
+  ];
 
-  // フォーマット変更時に音質設定をリセット
   const handleFormatChange = (newFormat: ExportSettings['format']) => {
-    setExportSettings(prev => ({
-      ...prev,
-      format: newFormat,
-      quality: 'high' // デフォルトに戻す
-    }));
+    setExportDraft((prev) => prev && { ...prev, format: newFormat, quality: 'high' });
   };
 
-  // ゼロ埋めした数値文字列を返す
   const padNumber = (value: string): string => {
     if (!value) return '';
     const numeric = value.replace(/[^0-9]/g, '');
     return numeric ? numeric.padStart(2, '0') : '';
   };
 
-  // 配列をトリム＆重複排除（順序維持）
   const trimAndDedup = (items: string[]) => {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -403,132 +587,75 @@ function App() {
     return result;
   };
 
-  // 数字変換関数（"02" → "2", "2/12" → "2", 非数字 → ""）
   const normalizeNumberString = (value: string): string => {
     const firstNumber = value.normalize('NFKC').match(/[0-9]+/)?.[0];
     if (!firstNumber) {
       return '';
     }
-
     const numberValue = parseInt(firstNumber, 10);
     if (isNaN(numberValue)) {
       return '';
     }
-
     return numberValue.toString();
   };
 
-  // 数字のみ入力を受け付ける関数
   const handleNumberInput = (value: string): string => {
-    // 数字以外の文字を除去
     return value.replace(/[^0-9]/g, '');
   };
 
-  // ファイルタイプを判定する関数
   const getFileType = (filePath: string): 'image' | 'audio' | 'unsupported' => {
     const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
     const audioExtensions = ['.wav', '.mp3', '.flac', '.m4a'];
-    const fileExtension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+    const lastDot = filePath.lastIndexOf('.');
+    if (lastDot < 0) return 'unsupported';
+    const fileExtension = filePath.toLowerCase().substring(lastDot);
 
     if (imageExtensions.includes(fileExtension)) {
       return 'image';
-    } else if (audioExtensions.includes(fileExtension)) {
-      return 'audio';
-    } else {
-      return 'unsupported';
     }
+    if (audioExtensions.includes(fileExtension)) {
+      return 'audio';
+    }
+    return 'unsupported';
   };
-  // ファイルパスからファイル名（拡張子なし）を取得
+
   const getFileNameWithoutExtension = (filePath: string): string => {
-    const fileName = filePath.split('/').pop() || filePath;
+    const fileName = filePath.split(/[\\/]/).pop() || filePath;
     const lastDotIndex = fileName.lastIndexOf('.');
     return lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
   };
 
-  // 新しいトラックIDを生成
   const generateTrackId = (): string => {
-    return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    return Date.now().toString() + Math.random().toString(36).slice(2, 11);
   };
 
-  // オーディオファイルを処理する関数
-  const processAudioFiles = useCallback(async (filePaths: string[], preferExternalArtwork: boolean = false) => {
+  const processNewFiles = useCallback(async (newFilePaths: string[], artworkPath?: string) => {
+    const tr = tRef.current;
+    const format = fmtRef.current;
     try {
-      setIsProcessing(true);
-
-      // 最新のトラック状態を取得して重複チェック
-      setTracks(currentTracks => {
-        // 既存のファイルパスをチェックして重複を除外
-        const existingPaths = new Set(currentTracks.map(track => track.filePath).filter(Boolean));
-
-        console.log('既存のファイルパス:', existingPaths);
-        console.log(`既存のトラック: ${currentTracks.map(track => track.title).join(', ')}`);
-        console.log('ドロップされたファイルパス:', filePaths);
-
-        const newFilePaths = filePaths.filter(path => !existingPaths.has(path));
-
-        console.log('重複除外後のファイルパス:', newFilePaths);
-
-        if (newFilePaths.length === 0) {
-          console.log('すべてのファイルは既に読み込み済みです');
-          confirm('選択されたファイルはすべて既に読み込み済みです。', {
-            title: '重複ファイル',
-            kind: 'info'
-          });
-          setIsProcessing(false);
-          return currentTracks; // 状態変更なし
-        }
-
-        if (newFilePaths.length < filePaths.length) {
-          const skippedCount = filePaths.length - newFilePaths.length;
-          console.log(`${skippedCount}個のファイルは既に読み込み済みのためスキップします`);
-        }
-
-        // 非同期処理を開始（状態は後で更新）。外部画像を優先するかフラグを渡す
-        processNewFiles(newFilePaths, preferExternalArtwork === true);
-
-        return currentTracks; // 現時点では状態変更なし
-      });
-    } catch (error) {
-      console.error('オーディオファイルの処理エラー:', error);
-      setIsProcessing(false);
-      await showAppDialog({
-        title: '音声を追加できませんでした',
-        message: '選んだ音声を一覧へ追加できませんでした。',
-        guidance: '同じ音声をすでに読み込んでいないか確認し、もう一度お試しください。',
-        technicalDetail: String(error),
-        tone: 'error',
-      });
-    }
-  }, [mode, showAppDialog]);
-
-  // 実際のファイル処理を行う関数
-  const processNewFiles = async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
-    try {
-      // 完了数をリセット
       setCompletedCount(0);
 
-      // FFmpegの確認と自動セットアップ
-      const ffmpegAvailable = await ensureFfmpegReady();
-      if (!ffmpegAvailable) {
-        return;
+      let results: AudioFileResult[] = [];
+      if (newFilePaths.length > 0 && await ensureFfmpegReady()) {
+        results = await invoke<AudioFileResult[]>('process_audio_files', {
+          filePaths: newFilePaths,
+        });
       }
 
-      // 重複していないオーディオファイルのみを処理
-      const results = await invoke<AudioFileResult[]>('process_audio_files', {
-        filePaths: newFilePaths
-      });
-
-      // 結果を処理してトラックリストに追加
       const newTracks: Track[] = [];
-      let hasAlbumArt = false;
-      let albumArtData = '';
-      let allTags: string[] = [];
+      const albumUpdates: Partial<AlbumData> = {};
+      const allTags: string[] = [];
       let hasAlbumInfo = false;
+      if (artworkPath) {
+        albumUpdates.albumArtwork = convertFileSrc(artworkPath);
+        albumUpdates.albumArtworkPath = artworkPath;
+        albumUpdates.albumArtworkCachePath = undefined;
+      }
       const readErrors: Array<{ filePath: string; detail: string }> = [];
 
       for (const result of results) {
         if (result.error) {
-          console.error(`ファイル ${result.file_path} の処理エラー: ${result.error}`);
+          console.error(`Error processing ${result.file_path}: ${result.error}`);
           readErrors.push({ filePath: result.file_path, detail: result.error });
           continue;
         }
@@ -536,55 +663,30 @@ function App() {
         if (result.metadata) {
           const metadata = result.metadata;
 
-          // アルバムアートを取得（最初のファイルからのみ）。
-          // ただし、フォルダ/ドロップに画像候補が含まれている場合は埋め込みを使わない。
-          if (!hasExternalImageCandidate && !hasAlbumArt && metadata.album_art) {
-            hasAlbumArt = true;
-            albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
-
-            // アルバムアートをキャッシュに保存
+          const embeddedArtwork = !albumUpdates.albumArtwork ? metadata.album_art : undefined;
+          if (embeddedArtwork) {
+            albumUpdates.albumArtwork = `data:image/jpeg;base64,${embeddedArtwork}`;
+            albumUpdates.albumArtworkPath = undefined;
+            albumUpdates.albumArtworkCachePath = undefined;
             try {
-              const cachePath = await invoke<string>('save_album_art_to_cache', {
-                base64Data: metadata.album_art,
+              albumUpdates.albumArtworkCachePath = await invoke<string>('save_album_art_to_cache', {
+                base64Data: embeddedArtwork,
                 albumTitle: metadata.album || 'Unknown Album',
-                albumArtist: metadata.album_artist || 'Unknown Artist'
+                albumArtist: metadata.album_artist || 'Unknown Artist',
               });
-
-              setAlbumData(prev => ({
-                ...prev,
-                albumArtwork: albumArtData,
-                albumArtworkCachePath: cachePath,
-                albumTitle: metadata.album || prev.albumTitle,
-                albumArtist: metadata.album_artist || prev.albumArtist,
-                releaseDate: metadata.date || prev.releaseDate
-              }));
-              hasAlbumInfo = true;
             } catch (error) {
-              console.error('アルバムアートキャッシュ保存エラー:', error);
-              // キャッシュ保存に失敗してもアルバムアートは表示
-              setAlbumData(prev => ({
-                ...prev,
-                albumArtwork: albumArtData,
-                albumTitle: metadata.album || prev.albumTitle,
-                albumArtist: metadata.album_artist || prev.albumArtist,
-                releaseDate: metadata.date || prev.releaseDate
-              }));
-              hasAlbumInfo = true;
+              console.error('Failed to cache album art:', error);
             }
           }
 
-          // アルバムアートが無い場合でも、最初の1回はアルバム情報を反映
-          if (!hasAlbumInfo && (metadata.album || metadata.album_artist || metadata.date)) {
-            setAlbumData(prev => ({
-              ...prev,
-              albumTitle: metadata.album || prev.albumTitle,
-              albumArtist: metadata.album_artist || prev.albumArtist,
-              releaseDate: metadata.date || prev.releaseDate
-            }));
+          const hasMetadata = metadata.album || metadata.album_artist || metadata.date;
+          if (embeddedArtwork || (!hasAlbumInfo && hasMetadata)) {
+            if (metadata.album) albumUpdates.albumTitle = metadata.album;
+            if (metadata.album_artist) albumUpdates.albumArtist = metadata.album_artist;
+            if (metadata.date) albumUpdates.releaseDate = metadata.date;
             hasAlbumInfo = true;
           }
 
-          // タグを収集（重複を避けて追加）
           if (metadata.tags && metadata.tags.length > 0) {
             for (const tag of metadata.tags) {
               if (!allTags.includes(tag)) {
@@ -592,12 +694,11 @@ function App() {
               }
             }
           }
-          // ジャンルをタグとして取り込む（MP3/FLACは genre に入る場合が多い）
           if (metadata.genre && metadata.genre.trim().length > 0) {
             const genreParts = metadata.genre
               .split(/[;,／、\/]/)
-              .map((t) => t.trim())
-              .filter((t) => t.length > 0);
+              .map((tag) => tag.trim())
+              .filter((tag) => tag.length > 0);
             for (const g of genreParts) {
               if (!allTags.includes(g)) {
                 allTags.push(g);
@@ -605,7 +706,6 @@ function App() {
             }
           }
 
-          // トラック情報を作成
           const newTrack: Track = {
             id: generateTrackId(),
             diskNumber: normalizeNumberString(metadata.disk_number || '1'),
@@ -613,16 +713,27 @@ function App() {
             title: metadata.title || getFileNameWithoutExtension(result.file_path),
             artists: metadata.artist ? trimAndDedup(metadata.artist.split(';')) : [],
             currentArtistInput: '',
-            filePath: result.file_path
+            filePath: result.file_path,
+            duration: metadata.duration,
           };
 
           newTracks.push(newTrack);
         }
       }
 
-      // トラックリストに追加
+      const advancesWizard = mode === 'simple' && newTracks.length > 0 && wizardStepRef.current === 1;
+      if (newTracks.length > 0 || artworkPath) {
+        pushHistory(undefined, advancesWizard ? 1 : undefined);
+        setAlbumData((prev) => ({
+          ...prev,
+          ...albumUpdates,
+          tags: [...new Set([...prev.tags, ...allTags])],
+        }));
+        if (advancesWizard) setWizardStep(2);
+      }
+
       if (newTracks.length > 0) {
-        setTracks(prev => {
+        setTracks((prev) => {
           const nextTrackByDisk = new Map<number, number>();
           for (const track of prev) {
             const diskNumber = Number.parseInt(track.diskNumber, 10) || 1;
@@ -659,56 +770,82 @@ function App() {
         });
       }
 
-      // 収集したタグをアルバムデータに追加
-      if (allTags.length > 0) {
-        setAlbumData(prev => {
-          const existingTags = new Set(prev.tags);
-          const newTags = allTags.filter(tag => !existingTags.has(tag));
-          if (newTags.length > 0) {
-            return {
-              ...prev,
-              tags: [...prev.tags, ...newTags]
-            };
-          }
-          return prev;
-        });
-      }
-
       if (readErrors.length > 0) {
         const fileNames = readErrors
           .map(({ filePath }) => filePath.split(/[\\/]/).pop() || filePath)
           .join('\n');
         await showAppDialog({
-          title: '一部の音声を読み込めませんでした',
-          message: `${readErrors.length}件の音声を読み込めませんでした。\n\n${fileNames}`,
-          guidance: 'ファイルがほかのアプリで開かれていないか、対応形式かを確認してから追加し直してください。',
+          title: tr.dialogs.partialReadFailedTitle,
+          message: format(tr.dialogs.partialReadFailedMessage, {
+            count: readErrors.length,
+            files: fileNames,
+          }),
+          guidance: tr.dialogs.partialReadFailedGuidance,
           technicalDetail: readErrors
             .map(({ filePath, detail }) => `${filePath}\n${detail}`)
             .join('\n\n'),
           tone: 'warning',
         });
       }
+    } catch (error) {
+      console.error('Error processing audio files:', error);
+      await showAppDialog({
+        title: tr.dialogs.readAudioFailedTitle,
+        message: tr.dialogs.readAudioFailedMessage,
+        guidance: tr.dialogs.readAudioFailedGuidance,
+        technicalDetail: String(error),
+        tone: 'error',
+      });
+    }
+  }, [ensureFfmpegReady, mode, pushHistory, showAppDialog]);
 
-      if (mode === 'simple' && newTracks.length > 0) {
-        setWizardStep((current) => (current === 1 ? 2 : current));
+  const importFiles = useCallback(async (filePaths: string[], imagePaths: string[] = []) => {
+    if (isImportingRef.current || isProcessing) return;
+    isImportingRef.current = true;
+    const tr = tRef.current;
+    const format = fmtRef.current;
+    try {
+      setIsProcessing(true);
+      const existingPaths = new Set(tracksRef.current.map((track) => track.filePath));
+      const newFilePaths = [...new Set(filePaths)].filter((path) => !existingPaths.has(path));
+      const score = (path: string) => {
+        const name = getFileNameWithoutExtension(path).toLowerCase();
+        if (name.includes('cover')) return 0;
+        if (name.includes('album')) return 1;
+        return 2;
+      };
+      const artworkPath = [...imagePaths].sort((a, b) => score(a) - score(b))[0];
+      if (newFilePaths.length > 0 || artworkPath) {
+        await processNewFiles(newFilePaths, artworkPath);
       }
 
+      if (filePaths.length > 0 && newFilePaths.length === 0) {
+        await showAppDialog({
+          title: tr.dialogs.duplicateFilesTitle,
+          message: tr.dialogs.duplicateFilesMessage,
+          confirmLabel: tr.common.ok,
+          tone: 'info',
+        });
+      } else if (newFilePaths.length < filePaths.length) {
+        showToast(format(tr.toast.skippedDuplicates, { count: filePaths.length - newFilePaths.length }), 'info');
+      }
     } catch (error) {
-      console.error('オーディオファイルの処理エラー:', error);
+      console.error('Error adding audio files:', error);
       await showAppDialog({
-        title: '音声を読み込めませんでした',
-        message: '選んだ音声を読み込んでいる途中で問題が起きました。',
-        guidance: 'ファイルを開いているほかのアプリを閉じてから、もう一度お試しください。',
+        title: tr.dialogs.addAudioFailedTitle,
+        message: tr.dialogs.addAudioFailedMessage,
+        guidance: tr.dialogs.addAudioFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
     } finally {
+      isImportingRef.current = false;
       setIsProcessing(false);
       setProcessingProgress(null);
     }
-  };
+  }, [isProcessing, processNewFiles, showAppDialog, showToast]);
 
-  // プログレスイベントリスナー
+  // Audio processing progress listener
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -716,16 +853,13 @@ function App() {
       try {
         unlisten = await listen<ProgressEvent>('audio-processing-progress', (event) => {
           const progress = event.payload;
-
-          // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
           if (progress.status === 'completed' || progress.status === 'error') {
-            setCompletedCount(prev => Math.max(prev, progress.current));
+            setCompletedCount((prev) => Math.max(prev, progress.current));
           }
-
           setProcessingProgress(progress);
         });
       } catch (error) {
-        console.error('プログレスリスナーの設定に失敗:', error);
+        console.error('Failed to set up progress listener:', error);
       }
     };
 
@@ -738,204 +872,162 @@ function App() {
     };
   }, []);
 
-  // Tauriのファイルドロップイベントリスナー
+  const handleDroppedPaths = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return;
+
+    const tr = tRef.current;
+    const imagePaths: string[] = [];
+    const audioPaths: string[] = [];
+    const directoryPaths: string[] = [];
+    const unsupportedPaths: string[] = [];
+
+    for (const path of paths) {
+      const lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+      const hasExtension = path.includes('.') && path.lastIndexOf('.') > lastSep;
+
+      if (!hasExtension) {
+        directoryPaths.push(path);
+        continue;
+      }
+
+      const fileType = getFileType(path);
+      switch (fileType) {
+        case 'image':
+          imagePaths.push(path);
+          break;
+        case 'audio':
+          audioPaths.push(path);
+          break;
+        default:
+          unsupportedPaths.push(path);
+          break;
+      }
+    }
+
+    let directoryAudioFiles: string[] = [];
+    let directoryImageFiles: string[] = [];
+    if (directoryPaths.length > 0) {
+      for (const dirPath of directoryPaths) {
+        try {
+          const files = await invoke<string[]>('scan_directory_for_audio_files', {
+            directoryPath: dirPath,
+          });
+          directoryAudioFiles.push(...files);
+
+          try {
+            const imgs = await invoke<string[]>('scan_directory_for_image_files', {
+              directoryPath: dirPath,
+            });
+            directoryImageFiles.push(...imgs);
+          } catch (imgErr) {
+            console.error(`Error scanning images in ${dirPath}:`, imgErr);
+          }
+        } catch (error) {
+          console.error(`Error scanning directory ${dirPath}:`, error);
+          await showAppDialog({
+            title: tr.dialogs.readFolderFailedTitle,
+            message: tr.dialogs.readFolderFailedDroppedMessage,
+            guidance: tr.dialogs.readFolderFailedGuidance,
+            technicalDetail: `${dirPath}\n\n${String(error)}`,
+            tone: 'error',
+          });
+        }
+      }
+    }
+
+    const allAudioPaths = [...audioPaths, ...directoryAudioFiles];
+    const allImagePaths = [...imagePaths, ...directoryImageFiles];
+
+    if (unsupportedPaths.length > 0) {
+      console.warn('Unsupported files:', unsupportedPaths);
+    }
+
+    if (allAudioPaths.length > 0 || allImagePaths.length > 0) {
+      await importFiles(allAudioPaths, allImagePaths);
+    }
+
+    if (directoryPaths.length > 0 && directoryAudioFiles.length === 0 && allImagePaths.length === 0) {
+      await showAppDialog({
+        title: tr.dialogs.noAudioInDroppedFolderTitle,
+        message: tr.dialogs.noAudioInDroppedFolderMessage,
+        confirmLabel: tr.common.ok,
+        tone: 'info',
+      });
+    }
+  }, [importFiles, showAppDialog]);
+
+  const handleDroppedPathsRef = useRef(handleDroppedPaths);
+  handleDroppedPathsRef.current = handleDroppedPaths;
+
+  // Tauri drag-and-drop listeners (including visual feedback overlay)
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
+    let disposed = false;
 
-    const setupListener = async () => {
-      console.log('Setting up file drop listener...');
-
+    const setupListeners = async () => {
       try {
-        unlisten = await listen('tauri://drag-drop', async (event) => {
-          console.log('File drop event received:', event);
-          const { paths } = event.payload as { paths: string[] };
-          console.log('Dropped paths:', paths);
-          console.log('Number of paths dropped:', paths.length);
-
-          if (paths.length === 0) return;
-
-          // ファイルタイプで分類
-          const imagePaths: string[] = [];
-          const audioPaths: string[] = [];
-          const directoryPaths: string[] = [];
-          const unsupportedPaths: string[] = [];
-
-          // パスが拡張子を持つかどうかで判断（拡張子なし=フォルダ）
-          for (const path of paths) {
-            const hasExtension = path.includes('.') && path.lastIndexOf('.') > path.lastIndexOf('/');
-
-            if (!hasExtension) {
-              // 拡張子がない場合はディレクトリとして扱う
-              console.log(`Found directory: ${path}`);
-              directoryPaths.push(path);
-              continue;
-            }
-
-            // ファイルの場合はタイプで分類
-            const fileType = getFileType(path);
-            switch (fileType) {
-              case 'image':
-                imagePaths.push(path);
-                break;
-              case 'audio':
-                audioPaths.push(path);
-                break;
-              default:
-                unsupportedPaths.push(path);
-                break;
-            }
-          }
-
-          // ディレクトリから音声/画像ファイルを取得
-          let directoryAudioFiles: string[] = [];
-          let directoryImageFiles: string[] = [];
-          if (directoryPaths.length > 0) {
-            console.log('Processing directories:', directoryPaths);
-
-            for (const dirPath of directoryPaths) {
-              try {
-                const files = await invoke<string[]>('scan_directory_for_audio_files', {
-                  directoryPath: dirPath
-                });
-                directoryAudioFiles.push(...files);
-                console.log(`Found ${files.length} audio files in ${dirPath}`);
-                // 画像もスキャン
-                try {
-                  const imgs = await invoke<string[]>('scan_directory_for_image_files', {
-                    directoryPath: dirPath
-                  });
-                  directoryImageFiles.push(...imgs);
-                  console.log(`Found ${imgs.length} image files in ${dirPath}`);
-                } catch (imgErr) {
-                  console.error(`Error scanning images in ${dirPath}:`, imgErr);
-                }
-              } catch (error) {
-                console.error(`Error scanning directory ${dirPath}:`, error);
-                await showAppDialog({
-                  title: 'フォルダを読み込めませんでした',
-                  message: 'ドロップしたフォルダの中を確認できませんでした。',
-                  guidance: 'フォルダへのアクセス権があるか確認して、もう一度お試しください。',
-                  technicalDetail: `${dirPath}\n\n${String(error)}`,
-                  tone: 'error',
-                });
-              }
-            }
-          }
-
-          // すべての音声ファイルパスを結合
-          const allAudioPaths = [...audioPaths, ...directoryAudioFiles];
-          // すべての画像ファイルパスを結合
-          const allImagePaths = [...imagePaths, ...directoryImageFiles];
-
-          // サポートされていないファイルがある場合は警告
-          if (unsupportedPaths.length > 0) {
-            console.warn('サポートされていないファイル:', unsupportedPaths);
-          }
-
-          // オーディオファイルの処理（先に処理する）。画像候補の有無を渡す
-          if (allAudioPaths.length > 0) {
-            console.log('Processing audio files:', allAudioPaths);
-            console.log(`Total audio files found: ${allAudioPaths.length}`);
-            await processAudioFiles(allAudioPaths, allImagePaths.length > 0);
-          }
-
-          // 画像ファイルは最後に処理し、アルバムアートとして優先的に使用
-          if (allImagePaths.length > 0) {
-            // 優先度: ファイル名に 'cover' を含む > 'album' を含む > その他
-            const score = (p: string) => {
-              const name = getFileNameWithoutExtension(p).toLowerCase();
-              if (name.includes('cover')) return 0;
-              if (name.includes('album')) return 1;
-              return 2;
-            };
-            const sorted = [...allImagePaths].sort((a, b) => score(a) - score(b));
-            const bestImage = sorted[0];
-            console.log('Selected album artwork image:', bestImage);
-            const artworkUrl = convertFileSrc(bestImage);
-            setAlbumData(prev => ({
-              ...prev,
-              albumArtwork: artworkUrl,
-              albumArtworkPath: bestImage,
-              // メタデータからのキャッシュ画像よりフォルダ内画像を優先（キャッシュはクリア）
-              albumArtworkCachePath: undefined
-            }));
-          }
-
-          // 処理結果を表示
-          if (directoryPaths.length > 0) {
-            const totalFound = directoryAudioFiles.length;
-            if (totalFound > 0) {
-              console.log(`ディレクトリから${totalFound}個の音声ファイルを発見しました`);
-            } else {
-              await confirm('ドロップされたフォルダに音声ファイルが見つかりませんでした。', {
-                title: '音声ファイルなし',
-                kind: 'info'
-              });
-            }
+        const unlistenEnter = await listen('tauri://drag-enter', () => {
+          setIsDraggingOver(true);
+        });
+        const unlistenLeave = await listen('tauri://drag-leave', () => {
+          setIsDraggingOver(false);
+        });
+        const unlistenDrop = await listen('tauri://drag-drop', async (event) => {
+          setIsDraggingOver(false);
+          const payload = event.payload as { paths?: string[] } | null;
+          if (payload?.paths && payload.paths.length > 0) {
+            await handleDroppedPathsRef.current(payload.paths);
           }
         });
+
+        if (disposed) {
+          unlistenEnter();
+          unlistenLeave();
+          unlistenDrop();
+          return;
+        }
+        unlisteners.push(unlistenEnter, unlistenLeave, unlistenDrop);
       } catch (error) {
-        console.error('Failed to set up file drop listener:', error);
+        console.error('Failed to set up file drop listeners:', error);
       }
     };
 
-    setupListener();
+    void setupListeners();
 
     return () => {
-      console.log('Cleaning up file drop listener...');
-      if (unlisten) {
+      disposed = true;
+      for (const unlisten of unlisteners) {
         unlisten();
       }
     };
   }, []);
 
   const handleAlbumFieldChange = (field: keyof AlbumData, value: string | boolean | string[]) => {
-    setAlbumData({ ...albumData, [field]: value });
+    if (field !== 'currentTagInput') {
+      pushHistory(`album:${field}`);
+    }
+    setAlbumData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // 文字列をハッシュ化してユニークな色を生成
   const stringToHash = (str: string): number => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // 32bit整数に変換
+      hash = hash & hash;
     }
     return Math.abs(hash);
   };
 
-  const hashToColor = (hash: number): string => {
-    // HSLを使って彩度と明度を固定し、色相のみを変化させる
-    const hue = hash % 360;
-    const saturation = 65; // 適度な彩度
-    const lightness = 85; // 明るい背景色
-
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-  };
-
-  const getTextColor = (backgroundColor: string): string => {
-    // 背景色から色相を抽出して文字色を生成
-    const hueMatch = backgroundColor.match(/hsl\((\d+),/);
-    if (hueMatch) {
-      const hue = parseInt(hueMatch[1]);
-      return `hsl(${hue}, 65%, 25%)`;
-    }
-    return '#1f2937'; // フォールバック
-  };
-
-  // 文字列から一意な色を生成
   const getChipColor = (text: string) => {
     const hash = stringToHash(text);
-    const backgroundColor = hashToColor(hash);
-    const textColor = getTextColor(backgroundColor);
-
+    const hue = hash % 360;
     return {
-      backgroundColor,
-      color: textColor
+      backgroundColor: `hsl(${hue}, 65%, 85%)`,
+      color: `hsl(${hue}, 65%, 25%)`,
     };
   };
 
-  // タグ入力処理（カンマ入力時にチップ化）
   const handleTagInput = (value: string) => {
     if (value.includes(',') || value.includes('，')) {
       const parts = value.split(/[,，]/);
@@ -943,45 +1035,43 @@ function App() {
       const remainingInput = parts[parts.length - 1].trim();
 
       if (newTags.length > 0) {
+        pushHistory();
         const merged = trimAndDedup([...albumData.tags, ...newTags]);
-        setAlbumData({
-          ...albumData,
+        setAlbumData((prev) => ({
+          ...prev,
           tags: merged,
-          currentTagInput: remainingInput
-        });
+          currentTagInput: remainingInput,
+        }));
       }
     } else {
       handleAlbumFieldChange('currentTagInput', value);
     }
   };
 
-  // タグチップを削除
   const removeTag = (tagToRemove: string) => {
-    const updatedTags = albumData.tags.filter(tag => tag !== tagToRemove);
-    handleAlbumFieldChange('tags', updatedTags);
+    pushHistory();
+    setAlbumData((prev) => ({
+      ...prev,
+      tags: prev.tags.filter((tag) => tag !== tagToRemove),
+    }));
   };
 
-  // アーティスト入力処理（カンマ入力時にチップ化）
   const handleArtistInput = (trackId: string, value: string) => {
     if (value.includes(',') || value.includes('，')) {
       const parts = value.split(/[,，]/);
-      const newArtists = parts.slice(0, -1).map(artist => artist.trim()).filter(artist => artist.length > 0);
+      const newArtists = parts.slice(0, -1).map((artist) => artist.trim()).filter((artist) => artist.length > 0);
       const remainingInput = parts[parts.length - 1].trim();
 
       if (newArtists.length > 0) {
-        const track = tracks.find(t => t.id === trackId);
-        if (track) {
-          const merged = trimAndDedup([...track.artists, ...newArtists]);
-          setTracks(tracks.map(t =>
-            t.id === trackId
-              ? {
-                ...t,
-                artists: merged,
-                currentArtistInput: remainingInput
-              }
-              : t
-          ));
-        }
+        pushHistory();
+        setTracks((prev) => prev.map((track) => {
+          if (track.id !== trackId) return track;
+          return {
+            ...track,
+            artists: trimAndDedup([...track.artists, ...newArtists]),
+            currentArtistInput: remainingInput,
+          };
+        }));
       } else {
         handleTrackChange(trackId, 'currentArtistInput', remainingInput);
       }
@@ -990,13 +1080,13 @@ function App() {
     }
   };
 
-  // アーティストチップを削除
   const removeArtistTag = (trackId: string, artistToRemove: string) => {
-    const track = tracks.find(t => t.id === trackId);
-    if (!track) return;
-
-    const updatedArtists = track.artists.filter(artist => artist !== artistToRemove);
-    handleTrackChange(trackId, 'artists', updatedArtists);
+    pushHistory();
+    setTracks((prev) => prev.map((track) => (
+      track.id === trackId
+        ? { ...track, artists: track.artists.filter((artist) => artist !== artistToRemove) }
+        : track
+    )));
   };
 
   const parseVoiceActorList = (input: string): string[] => {
@@ -1008,42 +1098,46 @@ function App() {
   const applyVoiceActorsToAllTracks = (input: string) => {
     const artists = parseVoiceActorList(input);
     if (artists.length === 0) return;
-    setTracks(tracks.map((track) => ({
+    pushHistory();
+    setTracks((prev) => prev.map((track) => ({
       ...track,
-      artists,
+      artists: [...artists],
       currentArtistInput: '',
     })));
+    showToast(t.toast.appliedVoiceActors, 'success');
   };
 
   const copyVoiceActorsFromPreviousTrack = (trackId: string) => {
     const index = tracks.findIndex((track) => track.id === trackId);
     if (index <= 0) return;
+    pushHistory();
     const artists = [...tracks[index - 1].artists];
-    setTracks(tracks.map((track) => (
+    setTracks((prev) => prev.map((track) => (
       track.id === trackId
         ? { ...track, artists, currentArtistInput: '' }
         : track
     )));
+    showToast(t.toast.copiedPreviousVoiceActors, 'info');
   };
 
   const copyFirstTrackVoiceActorsToAll = () => {
     if (tracks.length === 0 || tracks[0].artists.length === 0) return;
+    pushHistory();
     const artists = [...tracks[0].artists];
-    setTracks(tracks.map((track) => ({
+    setTracks((prev) => prev.map((track) => ({
       ...track,
       artists: [...artists],
       currentArtistInput: '',
     })));
+    showToast(t.toast.copiedFirstTrackVoiceActors, 'success');
   };
 
-  // クリップボードにコピー
-  const copyToClipboard = async (text: string, source: string = '') => {
+  const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      console.log(`Copied to clipboard: ${text} (from ${source})`);
+      showToast(fmt(t.toast.copied, { text }), 'info');
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
-      // フォールバック: 古いブラウザ向け
       try {
         const textarea = document.createElement('textarea');
         textarea.value = text;
@@ -1051,249 +1145,263 @@ function App() {
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
-        console.log(`Copied to clipboard (fallback): ${text} (from ${source})`);
+        showToast(fmt(t.toast.copied, { text }), 'info');
       } catch (fallbackError) {
         console.error('Fallback copy failed:', fallbackError);
       }
     }
   };
 
-  // 単一アーティストをコピー
   const copyArtist = (artist: string) => {
-    copyToClipboard(artist, 'single artist');
+    void copyToClipboard(artist);
   };
 
-  // 全アーティストを一括コピー（セミコロン区切り）
   const copyAllArtists = (artists: string[]) => {
-    const artistsText = artists.join('; ');
-    copyToClipboard(artistsText, 'all artists');
+    void copyToClipboard(artists.join('; '));
   };
 
-  // ペーストイベントハンドラー（複数アーティスト対応）
   const handleArtistPaste = (trackId: string, event: ClipboardEvent) => {
     event.preventDefault();
 
     const pastedText = event.clipboardData?.getData('text') || '';
     if (!pastedText.trim()) return;
 
-    // セミコロンとカンマの両方で分割（全角も対応）
     const separatorRegex = /[;；,，]/;
-    let newArtists: string[] = [];
-
-    if (separatorRegex.test(pastedText)) {
-      // 区切り文字がある場合は分割
-      newArtists = pastedText
-        .split(separatorRegex)
-        .map(artist => artist.trim())
-        .filter(artist => artist.length > 0);
-    } else {
-      // 区切り文字がない場合は単一アーティストとして扱う
-      const trimmed = pastedText.trim();
-      if (trimmed) {
-        newArtists = [trimmed];
-      }
-    }
+    const newArtists = separatorRegex.test(pastedText)
+      ? pastedText.split(separatorRegex).map((artist) => artist.trim()).filter((artist) => artist.length > 0)
+      : [pastedText.trim()];
 
     if (newArtists.length > 0) {
-      const track = tracks.find(t => t.id === trackId);
-      if (track) {
-        // 重複を除去して追加
-        const existingArtists = new Set(track.artists);
-        const uniqueNewArtists = newArtists.filter(artist => !existingArtists.has(artist));
-
-        if (uniqueNewArtists.length > 0) {
-          setTracks(tracks.map(t =>
-            t.id === trackId
-              ? {
-                ...t,
-                artists: [...t.artists, ...uniqueNewArtists],
-                currentArtistInput: '' // ペースト後は入力フィールドをクリア
-              }
-              : t
-          ));
-          console.log(`Pasted artists: ${uniqueNewArtists.join(', ')}`);
-        } else {
-          console.log('All pasted artists already exist');
-        }
-      }
+      pushHistory();
+      setTracks((prev) => prev.map((track) => {
+        if (track.id !== trackId) return track;
+        const merged = trimAndDedup([...track.artists, ...newArtists]);
+        return {
+          ...track,
+          artists: merged,
+          currentArtistInput: '',
+        };
+      }));
     }
   };
 
-  // アーティスト入力のエンターキーハンドラー
   const handleArtistKeyDown = (trackId: string, event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-
-      const track = tracks.find(t => t.id === trackId);
+      const track = tracks.find((item) => item.id === trackId);
       if (!track || !track.currentArtistInput.trim()) return;
 
       const newArtist = track.currentArtistInput.trim();
-
-      // 重複チェック
       if (track.artists.includes(newArtist)) {
-        console.log('Artist already exists');
         return;
       }
 
-      // アーティストを追加して入力フィールドをクリア
+      pushHistory();
       const merged = trimAndDedup([...track.artists, newArtist]);
-      setTracks(tracks.map(t =>
-        t.id === trackId
-          ? {
-            ...t,
-            artists: merged,
-            currentArtistInput: ''
-          }
-          : t
-      ));
-      console.log(`Added artist: ${newArtist}`);
+      setTracks((prev) => prev.map((item) => (
+        item.id === trackId
+          ? { ...item, artists: merged, currentArtistInput: '' }
+          : item
+      )));
     }
   };
 
-  // タグ入力のエンターキーハンドラー
   const handleTagKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-
       if (!albumData.currentTagInput.trim()) return;
 
       const newTag = albumData.currentTagInput.trim();
-
-      // 重複チェック
       if (albumData.tags.includes(newTag)) {
-        console.log('Tag already exists');
         return;
       }
 
-      // タグを追加（順序維持しつつ重複排除）して入力フィールドをクリア
+      pushHistory();
       const merged = trimAndDedup([...albumData.tags, newTag]);
-      setAlbumData({
-        ...albumData,
+      setAlbumData((prev) => ({
+        ...prev,
         tags: merged,
-        currentTagInput: ''
-      });
-      console.log(`Added tag: ${newTag}`);
+        currentTagInput: '',
+      }));
     }
   };
 
   const handleTrackChange = (trackId: string, field: keyof Track, value: string | boolean | string[]) => {
-    setTracks(tracks.map(track =>
+    if (field !== 'currentArtistInput') {
+      pushHistory(`track:${trackId}:${field}`);
+    }
+    setTracks((prev) => prev.map((track) => (
       track.id === trackId ? { ...track, [field]: value } : track
-    ));
+    )));
   };
-  // トラック削除処理（確認ポップアップ付き）
-  // トラックソート処理（Disk → Track順）
+
   const handleSort = () => {
-    setTracks([...tracks].sort(compareTracksByNumber));
+    if (tracks.length < 2) return;
+    pushHistory();
+    setTracks((prev) => [...prev].sort(compareTracksByNumber));
+    showToast(t.toast.sortedTracks, 'info');
   };
-  const handleTrackDelete = async (trackId: string) => {
-    console.log("Deleting track:", trackId);
-    console.log("Available tracks:", tracks.map(t => ({ id: t.id, title: t.title })));
-    const track = tracks.find(t => t.id === trackId);
-    console.log("Found track:", track);
-    if (!track) {
-      console.log("Track not found!");
+
+  const handleMoveTrack = (trackId: string, direction: 'up' | 'down') => {
+    const index = tracks.findIndex((track) => track.id === trackId);
+    if (index < 0) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tracks.length) return;
+
+    pushHistory();
+    setTracks((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleReorderTrack = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex
+      || fromIndex < 0
+      || toIndex < 0
+      || fromIndex >= tracks.length
+      || toIndex >= tracks.length
+    ) {
       return;
     }
 
-    const confirmMessage = `「${track.title}」を一覧から外しますか？
+    pushHistory();
+    setTracks((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
 
-パソコンにある元の音声ファイルは削除されません。`;
-    console.log("Showing confirm dialog:", confirmMessage);
-
-    try {
-      const userConfirmed = await confirm(confirmMessage, {
-        title: "一覧から外す",
-        kind: "warning"
-      });
-      console.log("User confirmed:", userConfirmed);
-
-      if (userConfirmed) {
-        console.log("Deleting track from array");
-        const newTracks = tracks.filter(t => t.id !== trackId);
-        console.log("New tracks array:", newTracks);
-        setTracks(newTracks);
-        console.log("Track deleted successfully");
-      } else {
-        console.log("User cancelled deletion");
+  const handleBatchTransformTitles = (transform: (title: string) => string) => {
+    let changedCount = 0;
+    const nextTracks = tracks.map((track) => {
+      const nextTitle = transform(track.title);
+      if (nextTitle !== track.title) {
+        changedCount++;
+        return { ...track, title: nextTitle };
       }
-    } catch (error) {
-      console.error("Error showing dialog:", error);
-    }
-  };
-  // 出力設定ダイアログを表示（詳細モード専用）
-  const handleExport = async () => {
-    if (tracks.length === 0) {
-      return;
-    }
-    setShowExportDialog(true);
+      return track;
+    });
+    if (changedCount === 0) return;
+
+    pushHistory();
+    setTracks(nextTracks);
+    showToast(fmt(t.toast.formattedTitles, { count: changedCount }), 'success');
   };
 
-  // かんたんモードのウィザード保存（ステップ4から直接実行）
-  const handleSimpleExport = async () => {
-    if (tracks.length === 0) {
-      return;
+  const handleRenumberTracks = () => {
+    if (tracks.length === 0) return;
+    pushHistory();
+    setTracks((prev) => {
+      const counters = new Map<number, number>();
+      return prev.map((track) => {
+        const diskNum = Number.parseInt(track.diskNumber, 10) || 1;
+        const nextNum = (counters.get(diskNum) ?? 0) + 1;
+        counters.set(diskNum, nextNum);
+        return {
+          ...track,
+          diskNumber: String(diskNum).padStart(2, '0'),
+          trackNumber: String(nextNum).padStart(2, '0'),
+        };
+      });
+    });
+    showToast(t.toast.renumberedTracks, 'success');
+  };
+
+  const handleTrackDelete = async (trackId: string) => {
+    const track = tracks.find((item) => item.id === trackId);
+    if (!track) return;
+
+    const userConfirmed = await showAppDialog({
+      title: t.dialogs.removeTrackTitle,
+      message: fmt(t.dialogs.removeTrackMessage, {
+        title: track.title || t.trackTable.untitledTrack,
+      }),
+      confirmLabel: t.dialogs.removeTrackConfirm,
+      cancelLabel: t.common.cancel,
+      tone: 'warning',
+    });
+
+    if (userConfirmed) {
+      pushHistory();
+      setTracks((prev) => prev.filter((item) => item.id !== trackId));
     }
-    setExportSettings(prev => ({
-      ...prev,
+  };
+
+  const handleExport = async () => {
+    if (tracks.length === 0) return;
+    setExportDraft({ ...exportSettings });
+  };
+
+  const handleSimpleExport = async () => {
+    if (tracks.length === 0) return;
+    await handleActualExport({
+      ...exportSettings,
       overwriteMode: 'rename',
       format: 'MP3',
       quality: 'high',
       encodeMode: 'reencode',
-    }));
-    await handleActualExport(true);
+    }, true);
   };
 
-  // フォルダ選択処理
-  const handleSelectOutputFolder = async () => {
+  const handleSelectOutputFolder = async (forExportDialog = false) => {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: '出力先フォルダを選択'
+        title: t.fileDialogs.selectOutputFolder,
       });
 
       if (selected && typeof selected === 'string') {
-        setExportSettings(prev => ({ ...prev, outputPath: selected }));
+        if (forExportDialog) {
+          setExportDraft((prev) => prev && { ...prev, outputPath: selected });
+        } else {
+          setExportSettings((prev) => ({ ...prev, outputPath: selected }));
+        }
       }
     } catch (error) {
-      console.error('フォルダ選択エラー:', error);
+      console.error('Failed to pick output folder:', error);
       await showAppDialog({
-        title: '保存先を選べませんでした',
-        message: '保存先フォルダを開けませんでした。',
-        guidance: 'もう一度「選ぶ」を押し、書き込みできるフォルダを選んでください。',
+        title: t.dialogs.selectOutputFailedTitle,
+        message: t.dialogs.selectOutputFailedMessage,
+        guidance: t.dialogs.selectOutputFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
     }
   };
 
-  // アートワーク選択
   const handleSelectArtworkFile = async () => {
     try {
       const selected = await open({
         multiple: false,
-        title: 'カバー画像を選択',
+        title: t.fileDialogs.selectCoverImage,
         filters: [
-          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
-        ]
+          { name: t.fileDialogs.filterImages, extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+        ],
       });
 
       if (selected) {
+        pushHistory();
         const artworkPath = Array.isArray(selected) ? selected[0] : selected;
-        setAlbumData(prev => ({
+        setAlbumData((prev) => ({
           ...prev,
           albumArtwork: convertFileSrc(artworkPath),
           albumArtworkPath: artworkPath,
-          albumArtworkCachePath: undefined
+          albumArtworkCachePath: undefined,
         }));
       }
     } catch (error) {
-      console.error('アートワーク選択エラー:', error);
+      console.error('Failed to pick cover image:', error);
       await showAppDialog({
-        title: '画像を選べませんでした',
-        message: 'カバー画像を開けませんでした。',
-        guidance: 'PNG、JPG、JPEG、WebP形式の画像を選び直してください。',
+        title: t.dialogs.selectImageFailedTitle,
+        message: t.dialogs.selectImageFailedMessage,
+        guidance: t.dialogs.selectImageFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
@@ -1301,24 +1409,30 @@ function App() {
   };
 
   const handleClearAlbumArtwork = () => {
-    setAlbumData(prev => ({
+    pushHistory();
+    setAlbumData((prev) => ({
       ...prev,
       albumArtwork: null,
       albumArtworkPath: undefined,
-      albumArtworkCachePath: undefined
+      albumArtworkCachePath: undefined,
     }));
   };
 
   const getArtworkSourceLabel = () => {
-    if (albumData.albumArtworkPath) return 'フォルダの画像';
+    if (albumData.albumArtworkPath) return t.albumForm.sourceFolderImage;
     if (albumData.albumArtworkCachePath) {
-      return mode === 'simple' ? '音声に含まれていた画像' : '埋め込みアート';
+      return mode === 'simple'
+        ? t.albumForm.sourceEmbeddedSimple
+        : t.albumForm.sourceEmbeddedAdvanced;
     }
-    if (albumData.albumArtwork) return mode === 'simple' ? '選んだ画像' : '手動追加';
+    if (albumData.albumArtwork) {
+      return mode === 'simple'
+        ? t.albumForm.sourceManualSimple
+        : t.albumForm.sourceManualAdvanced;
+    }
     return '';
   };
 
-  // ディレクトリ経由の読み込み（ドロップと同等の挙動）
   const processSelectedDirectories = async (directoryPaths: string[]) => {
     if (!directoryPaths || directoryPaths.length === 0) return;
 
@@ -1328,15 +1442,15 @@ function App() {
     for (const dirPath of directoryPaths) {
       try {
         const files = await invoke<string[]>('scan_directory_for_audio_files', {
-          directoryPath: dirPath
+          directoryPath: dirPath,
         });
         directoryAudioFiles.push(...files);
       } catch (error) {
         console.error(`Error scanning directory ${dirPath}:`, error);
         await showAppDialog({
-          title: 'フォルダを読み込めませんでした',
-          message: '選んだフォルダの中を確認できませんでした。',
-          guidance: 'フォルダへのアクセス権があるか確認して、もう一度お試しください。',
+          title: t.dialogs.readFolderFailedTitle,
+          message: t.dialogs.readFolderFailedSelectedMessage,
+          guidance: t.dialogs.readFolderFailedGuidance,
           technicalDetail: `${dirPath}\n\n${String(error)}`,
           tone: 'error',
         });
@@ -1344,7 +1458,7 @@ function App() {
 
       try {
         const imgs = await invoke<string[]>('scan_directory_for_image_files', {
-          directoryPath: dirPath
+          directoryPath: dirPath,
         });
         directoryImageFiles.push(...imgs);
       } catch (imgErr) {
@@ -1353,57 +1467,38 @@ function App() {
     }
 
     if (directoryAudioFiles.length === 0 && directoryImageFiles.length === 0) {
-      await confirm('選択されたフォルダに音声/画像ファイルが見つかりませんでした。', {
-        title: 'ファイルなし',
-        kind: 'info'
+      await showAppDialog({
+        title: t.dialogs.noFilesInSelectedFolderTitle,
+        message: t.dialogs.noFilesInSelectedFolderMessage,
+        confirmLabel: t.common.ok,
+        tone: 'info',
       });
       return;
     }
 
-    if (directoryAudioFiles.length > 0) {
-      await processAudioFiles(directoryAudioFiles, directoryImageFiles.length > 0);
-    }
-
-    if (directoryImageFiles.length > 0) {
-      const score = (p: string) => {
-        const name = getFileNameWithoutExtension(p).toLowerCase();
-        if (name.includes('cover')) return 0;
-        if (name.includes('album')) return 1;
-        return 2;
-      };
-      const sorted = [...directoryImageFiles].sort((a, b) => score(a) - score(b));
-      const bestImage = sorted[0];
-      const artworkUrl = convertFileSrc(bestImage);
-      setAlbumData(prev => ({
-        ...prev,
-        albumArtwork: artworkUrl,
-        albumArtworkPath: bestImage,
-        albumArtworkCachePath: undefined
-      }));
-    }
+    await importFiles(directoryAudioFiles, directoryImageFiles);
   };
 
-  // ファイル/フォルダ選択ダイアログ
   const handlePickAudioFiles = async () => {
     try {
       const selected = await open({
         multiple: true,
-        title: '音声ファイルを選択',
+        title: t.fileDialogs.selectAudioFiles,
         filters: [
-          { name: 'Audio', extensions: ['wav', 'mp3', 'flac', 'm4a'] }
-        ]
+          { name: t.fileDialogs.filterAudio, extensions: ['wav', 'mp3', 'flac', 'm4a'] },
+        ],
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       if (paths.length > 0) {
-        await processAudioFiles(paths, false);
+        await importFiles(paths);
       }
     } catch (error) {
-      console.error('ファイル選択エラー:', error);
+      console.error('Failed to pick audio files:', error);
       await showAppDialog({
-        title: '音声ファイルを選べませんでした',
-        message: 'ファイル選択画面を開けませんでした。',
-        guidance: '少し待ってから、もう一度お試しください。',
+        title: t.dialogs.selectAudioFailedTitle,
+        message: t.dialogs.selectAudioFailedMessage,
+        guidance: t.dialogs.selectAudioFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
@@ -1415,36 +1510,27 @@ function App() {
       const selected = await open({
         directory: true,
         multiple: true,
-        title: 'フォルダを選択'
+        title: t.fileDialogs.selectFolders,
       });
       if (!selected) return;
       const dirs = Array.isArray(selected) ? selected : [selected];
       await processSelectedDirectories(dirs);
     } catch (error) {
-      console.error('フォルダ選択エラー:', error);
+      console.error('Failed to pick folders:', error);
       await showAppDialog({
-        title: 'フォルダを選べませんでした',
-        message: 'フォルダ選択画面を開けませんでした。',
-        guidance: '少し待ってから、もう一度お試しください。',
+        title: t.dialogs.selectFolderFailedTitle,
+        message: t.dialogs.selectFolderFailedMessage,
+        guidance: t.dialogs.selectFolderFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
     }
   };
 
-  // 音質設定をバックエンド形式に変換
   const convertQuality = (format: string, quality: string): string => {
     switch (format) {
       case 'MP3':
-        switch (quality) {
-          case 'highest': return '320';
-          case 'high': return '256';
-          case 'medium': return '192';
-          case 'low': return '128';
-          default: return '192';
-        }
       case 'M4A':
-        // AACの目安ビットレート
         switch (quality) {
           case 'highest': return '320';
           case 'high': return '256';
@@ -1457,25 +1543,25 @@ function App() {
     }
   };
 
-  // 変換処理を実行する関数（失敗したファイルのみの再試行にも使用）
-  const performConversion = async (tracksToConvert: any[], albumData: any, outputSettings: any): Promise<ConvertResult> => {
-    console.log('=== 変換処理開始 ===');
-    console.log('変換対象:', tracksToConvert.length, 'ファイル');
-
-    // 完了数をリセット
+  const performConversion = async (
+    tracksToConvert: unknown[],
+    convertAlbumData: unknown,
+    outputSettings: unknown,
+  ): Promise<ConvertResult> => {
     setCompletedCount(0);
 
-    // 進捗イベントリスナーを設定
-    const unlistenProgress = await listen('convert-progress', (event: any) => {
+    const unlistenProgress = await listen('convert-progress', (event: { payload: {
+      current: number;
+      total: number;
+      current_file: string;
+      status: string;
+      progress_percent: number;
+    } }) => {
       const progress = event.payload;
-      console.log(`進捗: ${progress.current}/${progress.total} - ${progress.current_file} (${progress.status})`);
-
-      // 完了数を更新（並列処理でイベントが前後するため、最大値を記録）
       if (progress.status === 'completed' || progress.status === 'error') {
-        setCompletedCount(prev => Math.max(prev, progress.current));
+        setCompletedCount((prev) => Math.max(prev, progress.current));
       }
 
-      // ここで進捗表示UIを更新可能
       setConvertProgress({
         current: progress.current,
         total: progress.total,
@@ -1486,46 +1572,27 @@ function App() {
     });
 
     try {
-      // 変換リクエストを作成
       const convertRequest = {
         tracks: tracksToConvert,
-        album_data: albumData,
+        album_data: convertAlbumData,
         output_settings: outputSettings,
       };
-
-      // Tauriコマンドを呼び出し
       const result = await invoke<ConvertResult>('convert_audio_files', { request: convertRequest });
-      console.log('変換結果:', result);
-
       unlistenProgress();
       return result;
-
     } catch (invokeError) {
-      console.error('Tauri invoke エラー:', invokeError);
       unlistenProgress();
       throw invokeError;
     }
   };
 
-  // 実際の出力処理
-  const handleActualExport = async (fromSimpleWizard = false) => {
+  const handleActualExport = async (effectiveExportSettings: ExportSettings, fromSimpleWizard = false) => {
     try {
-      const effectiveExportSettings: ExportSettings = mode === 'simple'
-        ? {
-          ...exportSettings,
-          overwriteMode: 'rename',
-          format: 'MP3',
-          quality: 'high',
-          encodeMode: 'reencode',
-        }
-        : exportSettings;
-
-      // バリデーション
       if (!effectiveExportSettings.outputPath) {
         await showAppDialog({
-          title: '保存先を選んでください',
-          message: '音声を保存するフォルダがまだ選ばれていません。',
-          guidance: '「選ぶ」ボタンから保存先フォルダを選んでください。',
+          title: t.dialogs.missingOutputFolderTitle,
+          message: t.dialogs.missingOutputFolderMessage,
+          guidance: t.dialogs.missingOutputFolderGuidance,
           tone: 'warning',
         });
         return;
@@ -1536,11 +1603,13 @@ function App() {
         return;
       }
 
-      setShowExportDialog(false);
+      if (!fromSimpleWizard) {
+        setExportSettings({ ...effectiveExportSettings, overwriteMode: 'rename' });
+        setExportDraft(null);
+      }
       setIsProcessing(true);
 
-      // トラックデータを変換用の形式に変換
-      const convertTracks = tracks.map(track => ({
+      const convertTracks = tracks.map((track) => ({
         source_path: track.filePath || '',
         disk_number: track.diskNumber || '1',
         track_number: track.trackNumber || '1',
@@ -1548,7 +1617,6 @@ function App() {
         artists: track.artists,
       }));
 
-      // アルバムデータを変換用の形式に変換
       const convertAlbumData = {
         album_title: albumData.albumTitle,
         album_artist: albumData.albumArtist,
@@ -1559,7 +1627,6 @@ function App() {
         album_artwork: albumData.albumArtwork,
       };
 
-      // 出力設定を変換用の形式に変換
       const convertOutputSettings = {
         output_path: effectiveExportSettings.outputPath,
         format: effectiveExportSettings.format,
@@ -1572,37 +1639,37 @@ function App() {
         let currentTracksToConvert = convertTracks;
         let allConvertedFiles: string[] = [];
         let retryCount = 0;
-        const maxRetries = 3; // 最大再試行回数
+        const maxRetries = 3;
 
         while (retryCount <= maxRetries) {
-          // 変換実行
           const result = await performConversion(currentTracksToConvert, convertAlbumData, convertOutputSettings);
-
-          // 成功したファイルを記録
           allConvertedFiles = [...allConvertedFiles, ...result.converted_files];
 
           setIsProcessing(false);
           setConvertProgress(null);
 
-          // エラーがあった場合
           if (result.failed_files.length > 0) {
             const errorDetails = result.failed_files
-              .map(f => {
+              .map((f) => {
                 const fileName = f.source_path.split(/[\\/]/).pop() || f.source_path;
                 return `${fileName}\n${f.error_message}`;
               })
               .join('\n\n');
             const failedNames = result.failed_files
-              .map(f => f.source_path.split(/[\\/]/).pop() || f.source_path)
+              .map((f) => f.source_path.split(/[\\/]/).pop() || f.source_path)
               .join('\n');
 
             const shouldRetry = await showAppDialog({
-              title: '一部の音声を保存できませんでした',
-              message: `保存できた音声：${result.converted_files.length}件\n保存できなかった音声：${result.failed_files.length}件\n\n${failedNames}`,
-              guidance: '保存先に空き容量があるか、元の音声がほかのアプリで開かれていないか確認してください。',
+              title: t.dialogs.partialSaveFailedTitle,
+              message: fmt(t.dialogs.partialSaveFailedMessage, {
+                succeeded: result.converted_files.length,
+                failed: result.failed_files.length,
+                files: failedNames,
+              }),
+              guidance: t.dialogs.partialSaveFailedGuidance,
               technicalDetail: errorDetails,
-              confirmLabel: 'もう一度試す',
-              cancelLabel: '今回は終了',
+              confirmLabel: t.dialogs.partialSaveRetry,
+              cancelLabel: t.dialogs.partialSaveFinish,
               tone: 'warning',
             });
 
@@ -1610,130 +1677,119 @@ function App() {
               retryCount++;
               if (retryCount > maxRetries) {
                 await showAppDialog({
-                  title: '繰り返し保存できませんでした',
-                  message: `${maxRetries}回試しましたが、保存できない音声が残っています。`,
-                  guidance: '元の音声と保存先を確認してから、アプリの一覧に戻ってもう一度保存してください。',
+                  title: t.dialogs.maxRetriesTitle,
+                  message: fmt(t.dialogs.maxRetriesMessage, { count: maxRetries }),
+                  guidance: t.dialogs.maxRetriesGuidance,
                   tone: 'warning',
                 });
                 break;
               }
 
-              // 失敗したファイルのみを再変換対象にする
-              currentTracksToConvert = result.failed_files.map(failedFile => {
-                // 元のトラック情報を探す
-                const originalTrack = tracks.find(t => t.filePath === failedFile.source_path);
+              currentTracksToConvert = result.failed_files.map((failedFile) => {
+                const originalTrack = tracks.find((item) => item.filePath === failedFile.source_path);
                 return {
                   source_path: failedFile.source_path,
                   disk_number: originalTrack?.diskNumber || '1',
                   track_number: originalTrack?.trackNumber || '1',
-                  title: originalTrack?.title || 'タイトル不明',
+                  title: originalTrack?.title || t.trackTable.untitledTrack,
                   artists: originalTrack?.artists || [],
                 };
               });
 
               setIsProcessing(true);
-              console.log(`=== 再試行 ${retryCount}/${maxRetries} ===`);
-              continue; // 再試行ループ
+              continue;
             } else {
-              // 再試行しない場合は終了
               break;
             }
           } else {
-            // すべて成功した場合
+            const savedFolder = allConvertedFiles[0]
+              ? getParentDirectory(allConvertedFiles[0])
+              : effectiveExportSettings.outputPath;
+            setLastSavedFolderPath(savedFolder);
+
             if (fromSimpleWizard || mode === 'simple') {
               setSavedCount(allConvertedFiles.length);
               setWizardStep('complete');
             } else {
               await showAppDialog({
-                title: '保存が完了しました',
-                message: `${allConvertedFiles.length}件の音声を保存しました。\n保存した音声が最後まで正しく読み取れることも確認済みです。`,
-                confirmLabel: '完了',
+                title: t.dialogs.saveCompleteTitle,
+                message: fmt(t.dialogs.saveCompleteMessage, { count: allConvertedFiles.length }),
+                confirmLabel: t.common.done,
+                secondaryAction: savedFolder
+                  ? {
+                    label: t.common.openFolder,
+                    onClick: () => {
+                      void handleOpenOutputFolder(savedFolder);
+                    },
+                  }
+                  : undefined,
                 tone: 'success',
               });
             }
             break;
           }
         }
-
       } catch (invokeError) {
-        console.error('Tauri invoke エラー:', invokeError);
+        console.error('Tauri invoke error:', invokeError);
         setIsProcessing(false);
         setConvertProgress(null);
 
         await showAppDialog({
-          title: '音声を保存できませんでした',
-          message: '保存処理を続けられない問題が起きました。',
-          guidance: '保存先の空き容量とアクセス権を確認して、もう一度お試しください。',
+          title: t.dialogs.saveFailedTitle,
+          message: t.dialogs.saveFailedMessage,
+          guidance: t.dialogs.saveFailedGuidance,
           technicalDetail: String(invokeError),
           tone: 'error',
         });
       }
-
     } catch (error) {
-      console.error('出力処理エラー:', error);
+      console.error('Export error:', error);
       setIsProcessing(false);
       setConvertProgress(null);
 
       await showAppDialog({
-        title: '保存を開始できませんでした',
-        message: '保存の準備中に問題が起きました。',
-        guidance: '保存先を選び直して、もう一度お試しください。',
+        title: t.dialogs.saveStartFailedTitle,
+        message: t.dialogs.saveStartFailedMessage,
+        guidance: t.dialogs.saveStartFailedGuidance,
         technicalDetail: String(error),
         tone: 'error',
       });
     }
   };
 
-  // 一括削除処理
   const handleClearAll = async () => {
-    if (tracks.length === 0) {
-      return; // データがない場合は何もしない
-    }
+    if (tracks.length === 0) return;
 
-    const confirmMessage = mode === 'simple'
-      ? `読み込んだ内容をすべて消しますか？
+    const userConfirmed = await showAppDialog({
+      title: t.dialogs.clearAllTitle,
+      message: mode === 'simple'
+        ? t.dialogs.clearAllSimpleMessage
+        : t.dialogs.clearAllAdvancedMessage,
+      confirmLabel: t.dialogs.clearAllConfirm,
+      cancelLabel: t.common.cancel,
+      tone: 'warning',
+    });
 
-音声の一覧、音声作品の情報、カバー画像が画面から消えます。
-パソコンにある元の音声ファイルは削除されません。`
-      : `すべての編集内容を削除しますか？
-
-この操作により以下がリセットされます：
-• すべてのトラック
-• 音声作品の情報
-• カバー画像
-
-元の音声ファイルは削除されません。`;
-
-    try {
-      const userConfirmed = await confirm(confirmMessage, {
-        title: "読み込んだ内容を消す",
-        kind: "warning"
+    if (userConfirmed) {
+      pushHistory(undefined, mode === 'simple' ? wizardStep : undefined);
+      setTracks([]);
+      setAlbumData({
+        albumTitle: '',
+        albumArtist: '',
+        releaseDate: '',
+        tags: [],
+        currentTagInput: '',
+        albumArtwork: null,
+        albumArtworkPath: undefined,
+        albumArtworkCachePath: undefined,
       });
-
-      if (userConfirmed) {
-        // 全データをリセット
-        setTracks([]);
-        setAlbumData({
-          albumTitle: '',
-          albumArtist: '',
-          releaseDate: '',
-          tags: [],
-          currentTagInput: '',
-          albumArtwork: null,
-          albumArtworkPath: undefined,
-          albumArtworkCachePath: undefined
-        });
-        if (mode === 'simple') {
-          setWizardStep(1);
-          setSavedCount(0);
-        }
-        console.log("All data cleared successfully");
+      setLastSavedFolderPath('');
+      if (mode === 'simple') {
+        setWizardStep(1);
+        setSavedCount(0);
       }
-    } catch (error) {
-      console.error("Error showing clear all dialog:", error);
     }
   };
-
 
   const handleStartOver = () => {
     setTracks([]);
@@ -1747,11 +1803,14 @@ function App() {
       albumArtworkPath: undefined,
       albumArtworkCachePath: undefined,
     });
-    setExportSettings(prev => ({ ...prev, outputPath: '' }));
+    pastHistoryRef.current = [];
+    futureHistoryRef.current = [];
+    lastHistoryGroupRef.current = null;
+    syncHistoryAvailability();
+    setLastSavedFolderPath('');
     setSavedCount(0);
     setWizardStep(1);
   };
-
 
   return (
     <div class={`flex h-screen bg-zinc-100 ${mode === 'advanced' ? 'min-w-[980px]' : ''}`}>
@@ -1770,7 +1829,6 @@ function App() {
         />
       )}
 
-      {/* メインコンテンツ */}
       <main class="flex min-w-0 flex-1 flex-col bg-white">
         <AppToolbar
           mode={mode}
@@ -1784,8 +1842,8 @@ function App() {
           onCheckForUpdates={() => { void checkForUpdates(true); }}
           onShowAbout={() => { setAboutTab('overview'); setShowAbout(true); }}
           onShowGuide={() => { setOnboardingStep(0); setShowOnboarding(true); }}
-          onClearAll={handleClearAll}
-          onExport={handleExport}
+          onClearAll={() => { void handleClearAll(); }}
+          onExport={() => { void handleExport(); }}
         />
 
         <FfmpegBanner
@@ -1801,9 +1859,12 @@ function App() {
             tracks={tracks}
             albumData={albumData}
             exportSettings={exportSettings}
+            lastSavedFolderPath={lastSavedFolderPath}
             artworkSourceLabel={getArtworkSourceLabel()}
             isProcessing={isProcessing}
             isFfmpegReady={isFfmpegReady}
+            canUndo={historyAvailability.canUndo}
+            canRedo={historyAvailability.canRedo}
             savedCount={savedCount}
             getChipColor={getChipColor}
             onStepChange={setWizardStep}
@@ -1815,8 +1876,15 @@ function App() {
             onTagInput={handleTagInput}
             onTagKeyDown={handleTagKeyDown}
             onRemoveTag={removeTag}
-            onTrackDelete={handleTrackDelete}
+            onTrackDelete={(trackId) => { void handleTrackDelete(trackId); }}
             onTrackChange={handleTrackChange}
+            onMoveTrack={handleMoveTrack}
+            onReorderTrack={handleReorderTrack}
+            onRenumberTracks={handleRenumberTracks}
+            onSortTracks={handleSort}
+            onBatchTransformTitles={handleBatchTransformTitles}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
             onNumberInput={handleNumberInput}
             onPadNumber={padNumber}
             onArtistInput={handleArtistInput}
@@ -1828,7 +1896,8 @@ function App() {
             onApplyVoiceActorsToAll={applyVoiceActorsToAllTracks}
             onCopyVoiceActorsFromPrevious={copyVoiceActorsFromPreviousTrack}
             onCopyFirstTrackVoiceActorsToAll={copyFirstTrackVoiceActorsToAll}
-            onSelectOutputFolder={handleSelectOutputFolder}
+            onSelectOutputFolder={() => { void handleSelectOutputFolder(); }}
+            onOpenOutputFolder={(path) => { void handleOpenOutputFolder(path); }}
             onExport={() => { void handleSimpleExport(); }}
             onStartOver={handleStartOver}
           />
@@ -1838,11 +1907,20 @@ function App() {
             tracks={tracks}
             isProcessing={isProcessing}
             isFfmpegReady={isFfmpegReady}
+            canUndo={historyAvailability.canUndo}
+            canRedo={historyAvailability.canRedo}
             getChipColor={getChipColor}
             onPickAudioFiles={handlePickAudioFiles}
             onPickDirectories={handlePickDirectories}
-            onTrackDelete={handleTrackDelete}
+            onTrackDelete={(trackId) => { void handleTrackDelete(trackId); }}
             onTrackChange={handleTrackChange}
+            onMoveTrack={handleMoveTrack}
+            onReorderTrack={handleReorderTrack}
+            onRenumberTracks={handleRenumberTracks}
+            onSortTracks={handleSort}
+            onBatchTransformTitles={handleBatchTransformTitles}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
             onNumberInput={handleNumberInput}
             onPadNumber={padNumber}
             onArtistInput={handleArtistInput}
@@ -1858,22 +1936,20 @@ function App() {
         )}
       </main>
 
-      {/* 出力設定ダイアログ（詳細モード専用） */}
-      {mode === 'advanced' && (
+      {mode === 'advanced' && exportDraft && (
         <ExportDialog
           mode={mode}
-          isOpen={showExportDialog}
-          settings={exportSettings}
-          qualityOptions={getQualityOptions(exportSettings.format)}
-          onSettingsChange={setExportSettings}
+          isOpen
+          settings={exportDraft}
+          qualityOptions={getQualityOptions(exportDraft.format)}
+          onSettingsChange={setExportDraft}
           onFormatChange={handleFormatChange}
-          onSelectOutputFolder={handleSelectOutputFolder}
-          onCancel={() => setShowExportDialog(false)}
-          onExport={() => { void handleActualExport(false); }}
+          onSelectOutputFolder={() => { void handleSelectOutputFolder(true); }}
+          onCancel={() => setExportDraft(null)}
+          onExport={() => { void handleActualExport(exportDraft); }}
         />
       )}
 
-      {/* About / Legal ダイアログ */}
       <AboutDialog
         mode={mode}
         isOpen={showAbout}
@@ -1884,7 +1960,6 @@ function App() {
         onClose={() => setShowAbout(false)}
       />
 
-      {/* 処理中オーバーレイ */}
       <ProcessingOverlay
         isProcessing={isProcessing}
         convertProgress={convertProgress}
@@ -1892,10 +1967,8 @@ function App() {
         completedCount={completedCount}
       />
 
-      {/* オンボーディングオーバーレイ */}
       <OnboardingModal
         isOpen={showOnboarding}
-        steps={onboardingSteps}
         currentStep={onboardingStep}
         onStepChange={setOnboardingStep}
         onClose={closeOnboarding}
@@ -1906,6 +1979,9 @@ function App() {
         mode={mode}
         onResult={handleAppDialogResult}
       />
+
+      <DragDropOverlay visible={isDraggingOver} />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
