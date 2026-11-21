@@ -45,7 +45,6 @@ interface TrackTableProps {
   onTrackChange: (trackId: string, field: keyof Track, value: string | boolean | string[]) => void;
   onMoveTrack: (trackId: string, direction: 'up' | 'down') => void;
   onReorderTrack: (fromIndex: number, toIndex: number) => void;
-  onInternalDragChange: (dragging: boolean) => void;
   onRenumberTracks: () => void;
   onSortTracks: () => void;
   onBatchTransformTitles: (transform: (title: string) => string) => void;
@@ -89,7 +88,6 @@ export function TrackTable({
   onTrackChange,
   onMoveTrack,
   onReorderTrack,
-  onInternalDragChange,
   onRenumberTracks,
   onSortTracks,
   onBatchTransformTitles,
@@ -116,8 +114,10 @@ export function TrackTable({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [previewErrorTrackId, setPreviewErrorTrackId] = useState<string | null>(null);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ index: number; position: 'above' | 'below' } | null>(null);
+  const [draggedTrackId, setDraggedTrackId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ trackId: string; position: 'above' | 'below' } | null>(null);
+  const dragRef = useRef<{ pointerId: number; trackId: string } | null>(null);
+  const trackRowsRef = useRef<HTMLTableSectionElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeTrackIdRef = useRef<string | null>(null);
 
@@ -315,49 +315,53 @@ export function TrackTable({
     }
   };
 
-  const clearDragState = () => {
-    setDraggedIndex(null);
+  const getDropTarget = (event: PointerEvent) => {
+    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLTableRowElement>('tr[data-track-id]');
+    const trackId = row?.dataset.trackId;
+    if (!row || !trackId || !trackRowsRef.current?.contains(row)) return null;
+
+    const rect = row.getBoundingClientRect();
+    const position = event.clientY < rect.top + rect.height / 2 ? 'above' : 'below';
+    return { trackId, position } as const;
+  };
+
+  const clearDragState = (event: PointerEvent) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDraggedTrackId(null);
     setDropTarget(null);
-    onInternalDragChange(false);
   };
 
-  const handleRowDragStart = (index: number, event: DragEvent) => {
-    setDraggedIndex(index);
-    onInternalDragChange(true);
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', String(index));
-    }
-  };
-
-  const handleRowDragOver = (index: number, event: DragEvent) => {
-    if (draggedIndex === null) return;
+  const handleDragPointerDown = (trackId: string, event: PointerEvent) => {
+    if (event.button !== 0 || dragRef.current || tracks.length < 2 || isProcessing) return;
     event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const position: 'above' | 'below' = event.clientY < rect.top + rect.height / 2 ? 'above' : 'below';
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, trackId };
+    setDraggedTrackId(trackId);
+  };
+
+  const handleDragPointerMove = (event: PointerEvent) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    const target = getDropTarget(event);
     setDropTarget((prev) => (
-      prev?.index === index && prev.position === position ? prev : { index, position }
+      prev?.trackId === target?.trackId && prev?.position === target?.position ? prev : target
     ));
   };
 
-  const handleRowDrop = (index: number, event: DragEvent) => {
-    if (draggedIndex === null) return;
-    event.preventDefault();
+  const handleDragPointerUp = (event: PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    clearDragState(event);
 
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const insertBelow = event.clientY >= rect.top + rect.height / 2;
-    let targetIndex = insertBelow ? index + 1 : index;
-    if (draggedIndex < targetIndex) {
-      targetIndex -= 1;
-    }
+    const target = getDropTarget(event);
+    if (!target || isProcessing) return;
+    const fromIndex = tracks.findIndex((track) => track.id === drag.trackId);
+    const rowIndex = tracks.findIndex((track) => track.id === target.trackId);
+    if (fromIndex < 0 || rowIndex < 0) return;
 
-    if (targetIndex !== draggedIndex) {
-      onReorderTrack(draggedIndex, targetIndex);
-    }
-    clearDragState();
+    const boundary = target.position === 'below' ? rowIndex + 1 : rowIndex;
+    const toIndex = boundary > fromIndex ? boundary - 1 : boundary;
+    if (fromIndex !== toIndex) onReorderTrack(fromIndex, toIndex);
   };
 
   const iconBtnClass = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40';
@@ -604,7 +608,7 @@ export function TrackTable({
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-zinc-100 bg-white">
+          <tbody ref={trackRowsRef} class="divide-y divide-zinc-100 bg-white">
             {tracks.map((track, index) => {
               const key = numberKey(track);
               const hasDuplicate = key ? duplicateKeys.has(key) : false;
@@ -615,8 +619,8 @@ export function TrackTable({
               const canPreview = Boolean(track.filePath) && !isProcessing;
               const displayTitle = track.title || t.trackTable.untitledTrack;
               const rowTipPos = index === tracks.length - 1 && tracks.length > 1 ? 'top' : 'bottom';
-              const isDragged = draggedIndex === index;
-              const dropIndicatorStyle = dropTarget?.index === index && draggedIndex !== index
+              const isDragged = draggedTrackId === track.id;
+              const dropIndicatorStyle = dropTarget?.trackId === track.id && !isDragged
                 ? {
                   boxShadow: dropTarget.position === 'above'
                     ? 'inset 0 2px 0 0 #2563eb'
@@ -627,8 +631,7 @@ export function TrackTable({
               return (
                 <tr
                   key={track.id}
-                  onDragOver={(event) => handleRowDragOver(index, event)}
-                  onDrop={(event) => handleRowDrop(index, event)}
+                  data-track-id={track.id}
                   style={dropIndicatorStyle}
                   class={`transition-colors ${
                     isDragged
@@ -683,11 +686,13 @@ export function TrackTable({
                   <td class="px-1 py-2 text-center align-top">
                     <div class="inline-flex h-8 items-center gap-0.5">
                       <span
-                        draggable={tracks.length > 1}
-                        onDragStart={(event) => handleRowDragStart(index, event)}
-                        onDragEnd={clearDragState}
+                        onPointerDown={(event) => handleDragPointerDown(track.id, event)}
+                        onPointerMove={handleDragPointerMove}
+                        onPointerUp={handleDragPointerUp}
+                        onPointerCancel={clearDragState}
+                        onLostPointerCapture={clearDragState}
                         title={t.trackTable.dragToReorder}
-                        class={`inline-flex h-7 w-5 items-center justify-center rounded text-zinc-400 transition-colors ${
+                        class={`inline-flex h-7 w-5 touch-none select-none items-center justify-center rounded text-zinc-400 transition-colors ${
                           tracks.length > 1
                             ? 'cursor-grab hover:bg-zinc-100 hover:text-zinc-700 active:cursor-grabbing'
                             : 'cursor-default opacity-25'

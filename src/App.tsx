@@ -41,11 +41,13 @@ const MAX_HISTORY_SIZE = 50;
 interface EditorSnapshot {
   tracks: Track[];
   albumData: AlbumData;
+  wizardStep?: WizardStep;
 }
 
-const cloneSnapshot = (tracks: Track[], albumData: AlbumData): EditorSnapshot => ({
+const cloneSnapshot = (tracks: Track[], albumData: AlbumData, wizardStep?: WizardStep): EditorSnapshot => ({
   tracks: tracks.map((track) => ({ ...track, artists: [...track.artists] })),
   albumData: { ...albumData, tags: [...albumData.tags] },
+  wizardStep,
 });
 
 const loadInitialExportSettings = (): ExportSettings => {
@@ -62,9 +64,7 @@ const loadInitialExportSettings = (): ExportSettings => {
     const parsed = JSON.parse(raw) as Partial<ExportSettings>;
     return {
       outputPath: typeof parsed.outputPath === 'string' ? parsed.outputPath : defaults.outputPath,
-      overwriteMode: parsed.overwriteMode === 'overwrite' || parsed.overwriteMode === 'rename'
-        ? parsed.overwriteMode
-        : defaults.overwriteMode,
+      overwriteMode: defaults.overwriteMode,
       format: parsed.format === 'MP3' || parsed.format === 'M4A'
         ? parsed.format
         : defaults.format,
@@ -132,19 +132,21 @@ function App() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   // Export settings (persisted across sessions)
-  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportDraft, setExportDraft] = useState<ExportSettings | null>(null);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(loadInitialExportSettings);
 
   // Undo / Redo history
   const tracksRef = useRef(tracks);
   const albumDataRef = useRef(albumData);
+  const wizardStepRef = useRef(wizardStep);
+  const isImportingRef = useRef(false);
   tracksRef.current = tracks;
   albumDataRef.current = albumData;
+  wizardStepRef.current = wizardStep;
   const pastHistoryRef = useRef<EditorSnapshot[]>([]);
   const futureHistoryRef = useRef<EditorSnapshot[]>([]);
   const lastHistoryGroupRef = useRef<{ key: string; timestamp: number } | null>(null);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
-  const isInternalDraggingRef = useRef(false);
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -241,7 +243,7 @@ function App() {
     });
   }, []);
 
-  const pushHistory = useCallback((groupKey?: string) => {
+  const pushHistory = useCallback((groupKey?: string, step?: WizardStep) => {
     const now = Date.now();
     if (groupKey && lastHistoryGroupRef.current) {
       const { key, timestamp } = lastHistoryGroupRef.current;
@@ -251,7 +253,7 @@ function App() {
       }
     }
 
-    const snapshot = cloneSnapshot(tracksRef.current, albumDataRef.current);
+    const snapshot = cloneSnapshot(tracksRef.current, albumDataRef.current, step);
     pastHistoryRef.current = [...pastHistoryRef.current.slice(-(MAX_HISTORY_SIZE - 1)), snapshot];
     futureHistoryRef.current = [];
     lastHistoryGroupRef.current = groupKey ? { key: groupKey, timestamp: now } : null;
@@ -259,27 +261,39 @@ function App() {
   }, [syncHistoryAvailability]);
 
   const handleUndo = useCallback(() => {
+    if (isImportingRef.current) return;
     const previous = pastHistoryRef.current.pop();
     if (!previous) return;
 
-    const current = cloneSnapshot(tracksRef.current, albumDataRef.current);
+    const current = cloneSnapshot(
+      tracksRef.current,
+      albumDataRef.current,
+      previous.wizardStep === undefined ? undefined : wizardStepRef.current,
+    );
     futureHistoryRef.current.push(current);
     lastHistoryGroupRef.current = null;
     setTracks(previous.tracks);
     setAlbumData(previous.albumData);
+    if (previous.wizardStep !== undefined) setWizardStep(previous.wizardStep);
     syncHistoryAvailability();
     showToast(tRef.current.toast.undone, 'info');
   }, [showToast, syncHistoryAvailability]);
 
   const handleRedo = useCallback(() => {
+    if (isImportingRef.current) return;
     const next = futureHistoryRef.current.pop();
     if (!next) return;
 
-    const current = cloneSnapshot(tracksRef.current, albumDataRef.current);
+    const current = cloneSnapshot(
+      tracksRef.current,
+      albumDataRef.current,
+      next.wizardStep === undefined ? undefined : wizardStepRef.current,
+    );
     pastHistoryRef.current.push(current);
     lastHistoryGroupRef.current = null;
     setTracks(next.tracks);
     setAlbumData(next.albumData);
+    if (next.wizardStep !== undefined) setWizardStep(next.wizardStep);
     syncHistoryAvailability();
     showToast(tRef.current.toast.redone, 'info');
   }, [showToast, syncHistoryAvailability]);
@@ -552,11 +566,7 @@ function App() {
   ];
 
   const handleFormatChange = (newFormat: ExportSettings['format']) => {
-    setExportSettings((prev) => ({
-      ...prev,
-      format: newFormat,
-      quality: 'high',
-    }));
+    setExportDraft((prev) => prev && { ...prev, format: newFormat, quality: 'high' });
   };
 
   const padNumber = (value: string): string => {
@@ -619,26 +629,28 @@ function App() {
     return Date.now().toString() + Math.random().toString(36).slice(2, 11);
   };
 
-  const processNewFiles = useCallback(async (newFilePaths: string[], hasExternalImageCandidate: boolean) => {
+  const processNewFiles = useCallback(async (newFilePaths: string[], artworkPath?: string) => {
     const tr = tRef.current;
     const format = fmtRef.current;
     try {
       setCompletedCount(0);
 
-      const ffmpegAvailable = await ensureFfmpegReady();
-      if (!ffmpegAvailable) {
-        return;
+      let results: AudioFileResult[] = [];
+      if (newFilePaths.length > 0 && await ensureFfmpegReady()) {
+        results = await invoke<AudioFileResult[]>('process_audio_files', {
+          filePaths: newFilePaths,
+        });
       }
 
-      const results = await invoke<AudioFileResult[]>('process_audio_files', {
-        filePaths: newFilePaths,
-      });
-
       const newTracks: Track[] = [];
-      let hasAlbumArt = false;
-      let albumArtData = '';
-      let allTags: string[] = [];
+      const albumUpdates: Partial<AlbumData> = {};
+      const allTags: string[] = [];
       let hasAlbumInfo = false;
+      if (artworkPath) {
+        albumUpdates.albumArtwork = convertFileSrc(artworkPath);
+        albumUpdates.albumArtworkPath = artworkPath;
+        albumUpdates.albumArtworkCachePath = undefined;
+      }
       const readErrors: Array<{ filePath: string; detail: string }> = [];
 
       for (const result of results) {
@@ -651,46 +663,27 @@ function App() {
         if (result.metadata) {
           const metadata = result.metadata;
 
-          if (!hasExternalImageCandidate && !hasAlbumArt && metadata.album_art) {
-            hasAlbumArt = true;
-            albumArtData = `data:image/jpeg;base64,${metadata.album_art}`;
-
+          const embeddedArtwork = !albumUpdates.albumArtwork ? metadata.album_art : undefined;
+          if (embeddedArtwork) {
+            albumUpdates.albumArtwork = `data:image/jpeg;base64,${embeddedArtwork}`;
+            albumUpdates.albumArtworkPath = undefined;
+            albumUpdates.albumArtworkCachePath = undefined;
             try {
-              const cachePath = await invoke<string>('save_album_art_to_cache', {
-                base64Data: metadata.album_art,
+              albumUpdates.albumArtworkCachePath = await invoke<string>('save_album_art_to_cache', {
+                base64Data: embeddedArtwork,
                 albumTitle: metadata.album || 'Unknown Album',
                 albumArtist: metadata.album_artist || 'Unknown Artist',
               });
-
-              setAlbumData((prev) => ({
-                ...prev,
-                albumArtwork: albumArtData,
-                albumArtworkCachePath: cachePath,
-                albumTitle: metadata.album || prev.albumTitle,
-                albumArtist: metadata.album_artist || prev.albumArtist,
-                releaseDate: metadata.date || prev.releaseDate,
-              }));
-              hasAlbumInfo = true;
             } catch (error) {
               console.error('Failed to cache album art:', error);
-              setAlbumData((prev) => ({
-                ...prev,
-                albumArtwork: albumArtData,
-                albumTitle: metadata.album || prev.albumTitle,
-                albumArtist: metadata.album_artist || prev.albumArtist,
-                releaseDate: metadata.date || prev.releaseDate,
-              }));
-              hasAlbumInfo = true;
             }
           }
 
-          if (!hasAlbumInfo && (metadata.album || metadata.album_artist || metadata.date)) {
-            setAlbumData((prev) => ({
-              ...prev,
-              albumTitle: metadata.album || prev.albumTitle,
-              albumArtist: metadata.album_artist || prev.albumArtist,
-              releaseDate: metadata.date || prev.releaseDate,
-            }));
+          const hasMetadata = metadata.album || metadata.album_artist || metadata.date;
+          if (embeddedArtwork || (!hasAlbumInfo && hasMetadata)) {
+            if (metadata.album) albumUpdates.albumTitle = metadata.album;
+            if (metadata.album_artist) albumUpdates.albumArtist = metadata.album_artist;
+            if (metadata.date) albumUpdates.releaseDate = metadata.date;
             hasAlbumInfo = true;
           }
 
@@ -726,6 +719,17 @@ function App() {
 
           newTracks.push(newTrack);
         }
+      }
+
+      const advancesWizard = mode === 'simple' && newTracks.length > 0 && wizardStepRef.current === 1;
+      if (newTracks.length > 0 || artworkPath) {
+        pushHistory(undefined, advancesWizard ? 1 : undefined);
+        setAlbumData((prev) => ({
+          ...prev,
+          ...albumUpdates,
+          tags: [...new Set([...prev.tags, ...allTags])],
+        }));
+        if (advancesWizard) setWizardStep(2);
       }
 
       if (newTracks.length > 0) {
@@ -766,20 +770,6 @@ function App() {
         });
       }
 
-      if (allTags.length > 0) {
-        setAlbumData((prev) => {
-          const existingTags = new Set(prev.tags);
-          const newTags = allTags.filter((tag) => !existingTags.has(tag));
-          if (newTags.length > 0) {
-            return {
-              ...prev,
-              tags: [...prev.tags, ...newTags],
-            };
-          }
-          return prev;
-        });
-      }
-
       if (readErrors.length > 0) {
         const fileNames = readErrors
           .map(({ filePath }) => filePath.split(/[\\/]/).pop() || filePath)
@@ -797,10 +787,6 @@ function App() {
           tone: 'warning',
         });
       }
-
-      if (mode === 'simple' && newTracks.length > 0) {
-        setWizardStep((current) => (current === 1 ? 2 : current));
-      }
     } catch (error) {
       console.error('Error processing audio files:', error);
       await showAppDialog({
@@ -810,44 +796,41 @@ function App() {
         technicalDetail: String(error),
         tone: 'error',
       });
-    } finally {
-      setIsProcessing(false);
-      setProcessingProgress(null);
     }
-  }, [ensureFfmpegReady, mode, showAppDialog]);
+  }, [ensureFfmpegReady, mode, pushHistory, showAppDialog]);
 
-  const processAudioFiles = useCallback(async (filePaths: string[], preferExternalArtwork: boolean = false) => {
+  const importFiles = useCallback(async (filePaths: string[], imagePaths: string[] = []) => {
+    if (isImportingRef.current || isProcessing) return;
+    isImportingRef.current = true;
     const tr = tRef.current;
     const format = fmtRef.current;
     try {
       setIsProcessing(true);
+      const existingPaths = new Set(tracksRef.current.map((track) => track.filePath));
+      const newFilePaths = [...new Set(filePaths)].filter((path) => !existingPaths.has(path));
+      const score = (path: string) => {
+        const name = getFileNameWithoutExtension(path).toLowerCase();
+        if (name.includes('cover')) return 0;
+        if (name.includes('album')) return 1;
+        return 2;
+      };
+      const artworkPath = [...imagePaths].sort((a, b) => score(a) - score(b))[0];
+      if (newFilePaths.length > 0 || artworkPath) {
+        await processNewFiles(newFilePaths, artworkPath);
+      }
 
-      setTracks((currentTracks) => {
-        const existingPaths = new Set(currentTracks.map((track) => track.filePath).filter(Boolean));
-        const newFilePaths = filePaths.filter((path) => !existingPaths.has(path));
-
-        if (newFilePaths.length === 0) {
-          setIsProcessing(false);
-          void showAppDialog({
-            title: tr.dialogs.duplicateFilesTitle,
-            message: tr.dialogs.duplicateFilesMessage,
-            confirmLabel: tr.common.ok,
-            tone: 'info',
-          });
-          return currentTracks;
-        }
-
-        if (newFilePaths.length < filePaths.length) {
-          const skippedCount = filePaths.length - newFilePaths.length;
-          showToast(format(tr.toast.skippedDuplicates, { count: skippedCount }), 'info');
-        }
-
-        void processNewFiles(newFilePaths, preferExternalArtwork === true);
-        return currentTracks;
-      });
+      if (filePaths.length > 0 && newFilePaths.length === 0) {
+        await showAppDialog({
+          title: tr.dialogs.duplicateFilesTitle,
+          message: tr.dialogs.duplicateFilesMessage,
+          confirmLabel: tr.common.ok,
+          tone: 'info',
+        });
+      } else if (newFilePaths.length < filePaths.length) {
+        showToast(format(tr.toast.skippedDuplicates, { count: filePaths.length - newFilePaths.length }), 'info');
+      }
     } catch (error) {
       console.error('Error adding audio files:', error);
-      setIsProcessing(false);
       await showAppDialog({
         title: tr.dialogs.addAudioFailedTitle,
         message: tr.dialogs.addAudioFailedMessage,
@@ -855,8 +838,12 @@ function App() {
         technicalDetail: String(error),
         tone: 'error',
       });
+    } finally {
+      isImportingRef.current = false;
+      setIsProcessing(false);
+      setProcessingProgress(null);
     }
-  }, [processNewFiles, showAppDialog, showToast]);
+  }, [isProcessing, processNewFiles, showAppDialog, showToast]);
 
   // Audio processing progress listener
   useEffect(() => {
@@ -955,26 +942,8 @@ function App() {
       console.warn('Unsupported files:', unsupportedPaths);
     }
 
-    if (allAudioPaths.length > 0) {
-      await processAudioFiles(allAudioPaths, allImagePaths.length > 0);
-    }
-
-    if (allImagePaths.length > 0) {
-      const score = (p: string) => {
-        const name = getFileNameWithoutExtension(p).toLowerCase();
-        if (name.includes('cover')) return 0;
-        if (name.includes('album')) return 1;
-        return 2;
-      };
-      const sorted = [...allImagePaths].sort((a, b) => score(a) - score(b));
-      const bestImage = sorted[0];
-      const artworkUrl = convertFileSrc(bestImage);
-      setAlbumData((prev) => ({
-        ...prev,
-        albumArtwork: artworkUrl,
-        albumArtworkPath: bestImage,
-        albumArtworkCachePath: undefined,
-      }));
+    if (allAudioPaths.length > 0 || allImagePaths.length > 0) {
+      await importFiles(allAudioPaths, allImagePaths);
     }
 
     if (directoryPaths.length > 0 && directoryAudioFiles.length === 0 && allImagePaths.length === 0) {
@@ -985,7 +954,7 @@ function App() {
         tone: 'info',
       });
     }
-  }, [processAudioFiles, showAppDialog]);
+  }, [importFiles, showAppDialog]);
 
   const handleDroppedPathsRef = useRef(handleDroppedPaths);
   handleDroppedPathsRef.current = handleDroppedPaths;
@@ -998,9 +967,7 @@ function App() {
     const setupListeners = async () => {
       try {
         const unlistenEnter = await listen('tauri://drag-enter', () => {
-          if (!isInternalDraggingRef.current) {
-            setIsDraggingOver(true);
-          }
+          setIsDraggingOver(true);
         });
         const unlistenLeave = await listen('tauri://drag-leave', () => {
           setIsDraggingOver(false);
@@ -1368,22 +1335,21 @@ function App() {
 
   const handleExport = async () => {
     if (tracks.length === 0) return;
-    setShowExportDialog(true);
+    setExportDraft({ ...exportSettings });
   };
 
   const handleSimpleExport = async () => {
     if (tracks.length === 0) return;
-    setExportSettings((prev) => ({
-      ...prev,
+    await handleActualExport({
+      ...exportSettings,
       overwriteMode: 'rename',
       format: 'MP3',
       quality: 'high',
       encodeMode: 'reencode',
-    }));
-    await handleActualExport(true);
+    }, true);
   };
 
-  const handleSelectOutputFolder = async () => {
+  const handleSelectOutputFolder = async (forExportDialog = false) => {
     try {
       const selected = await open({
         directory: true,
@@ -1392,7 +1358,11 @@ function App() {
       });
 
       if (selected && typeof selected === 'string') {
-        setExportSettings((prev) => ({ ...prev, outputPath: selected }));
+        if (forExportDialog) {
+          setExportDraft((prev) => prev && { ...prev, outputPath: selected });
+        } else {
+          setExportSettings((prev) => ({ ...prev, outputPath: selected }));
+        }
       }
     } catch (error) {
       console.error('Failed to pick output folder:', error);
@@ -1506,27 +1476,7 @@ function App() {
       return;
     }
 
-    if (directoryAudioFiles.length > 0) {
-      await processAudioFiles(directoryAudioFiles, directoryImageFiles.length > 0);
-    }
-
-    if (directoryImageFiles.length > 0) {
-      const score = (p: string) => {
-        const name = getFileNameWithoutExtension(p).toLowerCase();
-        if (name.includes('cover')) return 0;
-        if (name.includes('album')) return 1;
-        return 2;
-      };
-      const sorted = [...directoryImageFiles].sort((a, b) => score(a) - score(b));
-      const bestImage = sorted[0];
-      const artworkUrl = convertFileSrc(bestImage);
-      setAlbumData((prev) => ({
-        ...prev,
-        albumArtwork: artworkUrl,
-        albumArtworkPath: bestImage,
-        albumArtworkCachePath: undefined,
-      }));
-    }
+    await importFiles(directoryAudioFiles, directoryImageFiles);
   };
 
   const handlePickAudioFiles = async () => {
@@ -1541,7 +1491,7 @@ function App() {
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       if (paths.length > 0) {
-        await processAudioFiles(paths, false);
+        await importFiles(paths);
       }
     } catch (error) {
       console.error('Failed to pick audio files:', error);
@@ -1636,18 +1586,8 @@ function App() {
     }
   };
 
-  const handleActualExport = async (fromSimpleWizard = false) => {
+  const handleActualExport = async (effectiveExportSettings: ExportSettings, fromSimpleWizard = false) => {
     try {
-      const effectiveExportSettings: ExportSettings = mode === 'simple'
-        ? {
-          ...exportSettings,
-          overwriteMode: 'rename',
-          format: 'MP3',
-          quality: 'high',
-          encodeMode: 'reencode',
-        }
-        : exportSettings;
-
       if (!effectiveExportSettings.outputPath) {
         await showAppDialog({
           title: t.dialogs.missingOutputFolderTitle,
@@ -1663,7 +1603,10 @@ function App() {
         return;
       }
 
-      setShowExportDialog(false);
+      if (!fromSimpleWizard) {
+        setExportSettings({ ...effectiveExportSettings, overwriteMode: 'rename' });
+        setExportDraft(null);
+      }
       setIsProcessing(true);
 
       const convertTracks = tracks.map((track) => ({
@@ -1828,7 +1771,7 @@ function App() {
     });
 
     if (userConfirmed) {
-      pushHistory();
+      pushHistory(undefined, mode === 'simple' ? wizardStep : undefined);
       setTracks([]);
       setAlbumData({
         albumTitle: '',
@@ -1937,7 +1880,6 @@ function App() {
             onTrackChange={handleTrackChange}
             onMoveTrack={handleMoveTrack}
             onReorderTrack={handleReorderTrack}
-            onInternalDragChange={(dragging) => { isInternalDraggingRef.current = dragging; }}
             onRenumberTracks={handleRenumberTracks}
             onSortTracks={handleSort}
             onBatchTransformTitles={handleBatchTransformTitles}
@@ -1954,7 +1896,7 @@ function App() {
             onApplyVoiceActorsToAll={applyVoiceActorsToAllTracks}
             onCopyVoiceActorsFromPrevious={copyVoiceActorsFromPreviousTrack}
             onCopyFirstTrackVoiceActorsToAll={copyFirstTrackVoiceActorsToAll}
-            onSelectOutputFolder={handleSelectOutputFolder}
+            onSelectOutputFolder={() => { void handleSelectOutputFolder(); }}
             onOpenOutputFolder={(path) => { void handleOpenOutputFolder(path); }}
             onExport={() => { void handleSimpleExport(); }}
             onStartOver={handleStartOver}
@@ -1974,7 +1916,6 @@ function App() {
             onTrackChange={handleTrackChange}
             onMoveTrack={handleMoveTrack}
             onReorderTrack={handleReorderTrack}
-            onInternalDragChange={(dragging) => { isInternalDraggingRef.current = dragging; }}
             onRenumberTracks={handleRenumberTracks}
             onSortTracks={handleSort}
             onBatchTransformTitles={handleBatchTransformTitles}
@@ -1995,17 +1936,17 @@ function App() {
         )}
       </main>
 
-      {mode === 'advanced' && (
+      {mode === 'advanced' && exportDraft && (
         <ExportDialog
           mode={mode}
-          isOpen={showExportDialog}
-          settings={exportSettings}
-          qualityOptions={getQualityOptions(exportSettings.format)}
-          onSettingsChange={setExportSettings}
+          isOpen
+          settings={exportDraft}
+          qualityOptions={getQualityOptions(exportDraft.format)}
+          onSettingsChange={setExportDraft}
           onFormatChange={handleFormatChange}
-          onSelectOutputFolder={handleSelectOutputFolder}
-          onCancel={() => setShowExportDialog(false)}
-          onExport={() => { void handleActualExport(false); }}
+          onSelectOutputFolder={() => { void handleSelectOutputFolder(true); }}
+          onCancel={() => setExportDraft(null)}
+          onExport={() => { void handleActualExport(exportDraft); }}
         />
       )}
 

@@ -50,7 +50,6 @@ interface SimpleWizardProps {
   onTrackChange: (trackId: string, field: keyof Track, value: string | boolean | string[]) => void;
   onMoveTrack: (trackId: string, direction: 'up' | 'down') => void;
   onReorderTrack: (fromIndex: number, toIndex: number) => void;
-  onInternalDragChange: (dragging: boolean) => void;
   onRenumberTracks: () => void;
   onSortTracks: () => void;
   onBatchTransformTitles: (transform: (title: string) => string) => void;
@@ -101,7 +100,6 @@ export function SimpleWizard({
   onTrackChange,
   onMoveTrack,
   onReorderTrack,
-  onInternalDragChange,
   onRenumberTracks,
   onSortTracks,
   onBatchTransformTitles,
@@ -306,7 +304,6 @@ export function SimpleWizard({
                 onTrackChange={onTrackChange}
                 onMoveTrack={onMoveTrack}
                 onReorderTrack={onReorderTrack}
-                onInternalDragChange={onInternalDragChange}
                 onRenumberTracks={onRenumberTracks}
                 onSortTracks={onSortTracks}
                 onBatchTransformTitles={onBatchTransformTitles}

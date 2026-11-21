@@ -29,9 +29,9 @@ export function normalizeTitleWhitespace(title: string): string {
 }
 
 export function replaceInTitle(title: string, search: string, replacement: string): string {
-  if (!search) return title;
-  const next = title.split(search).join(replacement).trim();
-  return next.length > 0 ? next : title;
+  if (!search || !title.includes(search)) return title;
+  const next = title.split(search).join(replacement);
+  return next.trim().length > 0 ? next : title;
 }
 
 export function parseDurationToSeconds(duration?: string): number {
