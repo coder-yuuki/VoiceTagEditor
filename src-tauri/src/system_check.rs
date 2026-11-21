@@ -50,6 +50,11 @@ fn ffmpeg_candidates() -> Vec<PathBuf> {
         }
     }
 
+    // Copy downloaded by the app itself (see ffmpeg_download.rs)
+    if let Some(p) = crate::ffmpeg_download::managed_binary("ffmpeg") {
+        cands.push(p);
+    }
+
     // PATH via which
     if let Ok(p) = which::which("ffmpeg") {
         cands.push(p);
@@ -126,6 +131,11 @@ fn ffprobe_candidates() -> Vec<PathBuf> {
         }
     }
 
+    // Copy downloaded by the app itself (see ffmpeg_download.rs)
+    if let Some(p) = crate::ffmpeg_download::managed_binary("ffprobe") {
+        cands.push(p);
+    }
+
     // PATH via which
     if let Ok(p) = which::which("ffprobe") {
         cands.push(p);
@@ -179,7 +189,7 @@ fn ffprobe_candidates() -> Vec<PathBuf> {
     cands
 }
 
-async fn verify_runs(path: &Path, arg: &str) -> bool {
+pub(crate) async fn verify_runs(path: &Path, arg: &str) -> bool {
     let mut cmd = Command::new(path);
     #[cfg(windows)]
     {
@@ -484,7 +494,47 @@ pub async fn ensure_ffmpeg_installed(app: tauri::AppHandle) -> Result<FfmpegInst
     }
 
     emit_install_progress(&app, "status", "FFmpeg / ffprobe が見つかりませんでした。");
-    let package_manager = install_ffmpeg_with_package_manager(&app).await?;
+
+    // 1st choice: download the pinned build into the app's data folder (no Homebrew/winget needed).
+    let mut download_error: Option<String> = None;
+    if crate::ffmpeg_download::is_supported() {
+        let progress_app = app.clone();
+        let progress = move |msg: String| emit_install_progress(&progress_app, "status", msg);
+        match crate::ffmpeg_download::install(&progress).await {
+            Ok(installed) => {
+                if check_ffmpeg().await? {
+                    let source = format!("FFmpeg {} (download)", crate::ffmpeg_download::FFMPEG_VERSION);
+                    return Ok(FfmpegInstallResult {
+                        available: true,
+                        installed,
+                        message: if installed {
+                            "FFmpegをダウンロードして準備しました。".to_string()
+                        } else {
+                            "FFmpegは利用可能です。".to_string()
+                        },
+                        package_manager: Some(source),
+                    });
+                }
+                download_error = Some("ダウンロードしたFFmpegを起動できませんでした。".to_string());
+            }
+            Err(error) => download_error = Some(error),
+        }
+        if let Some(ref error) = download_error {
+            emit_install_progress(&app, "stderr", error.clone());
+            emit_install_progress(&app, "status", "パッケージマネージャーでのインストールを試します。");
+        }
+    }
+
+    // Fallback: system package manager (Homebrew / winget / choco / scoop / apt ...).
+    let package_manager = match install_ffmpeg_with_package_manager(&app).await {
+        Ok(pm) => pm,
+        Err(pm_error) => {
+            return Err(match download_error {
+                Some(dl) => format!("{}\n\n{}", dl, pm_error),
+                None => pm_error,
+            })
+        }
+    };
 
     if !check_ffmpeg().await? {
         return Err(format!(

@@ -1,6 +1,6 @@
 # プライバシーポリシー（Privacy Policy）
 
-最終更新日: 2025-12-17
+最終更新日: 2026-11-21
 
 VoiceTagEditor（以下「本アプリ」）は、ユーザーのプライバシーを尊重します。本アプリはデスクトップアプリとしてローカル環境で動作し、原則としてユーザーのデータを外部に送信しません。
 
@@ -14,13 +14,16 @@ VoiceTagEditor（以下「本アプリ」）は、ユーザーのプライバシ
 ## 2. 外部への送信（通信）
 
 - 本アプリは、解析・変換・編集したデータを開発者や第三者へ自動送信しません。
-- 解析/変換処理のために、OSにインストール済みの FFmpeg を外部プロセスとして呼び出します（FFmpegは本アプリに同梱しません）。
+- 解析/変換処理のために FFmpeg を外部プロセスとして呼び出します（FFmpegは本アプリに同梱しません）。
+- FFmpeg が見つからない場合に限り、初回に FFmpeg の配布元（macOS: `ffmpeg.martin-riedl.de`、Windows: `github.com`）から FFmpeg 本体をダウンロードします。この通信でユーザーの音声ファイルやタグ情報が送信されることはありません（一般的な HTTP 通信と同様に、IP アドレスやアプリ名・バージョンを含む User-Agent は配布元に届きます）。
+- アップデートの確認のため、本アプリの更新情報を取得する通信を行います。
 
 ## 3. ローカルへの保存
 
 本アプリは利便性のため、以下をローカルに保存する場合があります。
 
 - オンボーディング（ガイド）の表示済みフラグ: `localStorage`（キー: `vte_onboarding_seen_v1`）
+- 自動ダウンロードした FFmpeg: macOS は `~/Library/Application Support/com.noguchiyuuki.voicetageditor/ffmpeg/`、Windows は `%LOCALAPPDATA%\com.noguchiyuuki.voicetageditor\ffmpeg\`（フォルダごと削除して構いません。必要になれば再度ダウンロードされます）
 - アルバムアートの一時キャッシュ: 例）`$HOME/.cache/VoiceTagEditor/album_art/`（環境により `USERPROFILE` 配下）
 
 ## 4. 削除方法
