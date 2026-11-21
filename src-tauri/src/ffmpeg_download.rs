@@ -2,9 +2,10 @@
 //! so the app works without Homebrew, winget, admin rights, or PATH changes.
 
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 /// Bump together with the asset URLs/hashes below.
@@ -15,6 +16,17 @@ static MANAGED_ROOT: OnceLock<PathBuf> = OnceLock::new();
 /// Called once from Tauri `setup` with `app_local_data_dir()/ffmpeg`.
 pub fn set_managed_root(root: PathBuf) {
     let _ = MANAGED_ROOT.set(root);
+}
+
+pub fn clean_up_interrupted_download(root: &Path) {
+    if !root.is_dir() {
+        return;
+    }
+    if let Ok(lock) = open_install_lock(root) {
+        if lock.try_lock().is_ok() {
+            remove_stale_staging_dirs(root);
+        }
+    }
 }
 
 fn managed_dir() -> Option<PathBuf> {
@@ -87,7 +99,39 @@ const ASSETS: &[Asset] = &[Asset {
 const ASSETS: &[Asset] = &[];
 
 pub fn is_supported() -> bool {
-    !ASSETS.is_empty()
+    if ASSETS.is_empty() {
+        return false;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        static SUPPORTED: OnceLock<bool> = OnceLock::new();
+        *SUPPORTED.get_or_init(|| {
+            std::process::Command::new("/usr/bin/sw_vers")
+                .arg("-productVersion")
+                .env("SYSTEM_VERSION_COMPAT", "0")
+                .output()
+                .is_ok_and(|output| {
+                    output.status.success()
+                        && supports_macos_version(&String::from_utf8_lossy(&output.stdout))
+                })
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn supports_macos_version(version: &str) -> bool {
+    // The pinned macOS builds target macOS 12.0 and later.
+    version
+        .trim()
+        .split('.')
+        .next()
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 12)
 }
 
 fn to_hex(bytes: &[u8]) -> String {
@@ -196,41 +240,116 @@ fn extract_binaries(archive: &Path, binaries: &[&str], out_dir: &Path) -> Result
     Ok(())
 }
 
-/// Downloads, verifies and installs the pinned build into the managed directory.
-/// Returns the directory containing `ffmpeg` and `ffprobe`.
-pub async fn install(progress: &(dyn Fn(String) + Sync)) -> Result<PathBuf, String> {
+fn open_install_lock(root: &Path) -> io::Result<File> {
+    // Keep the lock file in place so every app instance locks the same file.
+    File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join("install.lock"))
+}
+
+fn remove_stale_staging_dirs(root: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some((version, pid)) = name.to_str().and_then(|name| name.split_once(".partial-")) else {
+            continue;
+        };
+        if version.split('.').all(|part| part.parse::<u32>().is_ok())
+            && pid.parse::<u32>().is_ok()
+            && entry.file_type().is_ok_and(|kind| kind.is_dir())
+        {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+async fn lock_install(root: &Path, progress: &(dyn Fn(String) + Sync)) -> Result<Arc<File>, String> {
+    let lock_error = |error| format!("FFmpegの準備をロックできませんでした: {}", error);
+    let lock = open_install_lock(root).map_err(lock_error)?;
+    let mut waiting = false;
+    loop {
+        match lock.try_lock() {
+            Ok(()) => return Ok(Arc::new(lock)),
+            Err(fs::TryLockError::WouldBlock) => {
+                if !waiting {
+                    progress("別のアプリ起動で進行中のFFmpegの準備を待っています。".to_string());
+                    waiting = true;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(fs::TryLockError::Error(error)) => return Err(lock_error(error)),
+        }
+    }
+}
+
+async fn binaries_work(dir: &Path) -> bool {
+    let ffmpeg = dir.join(exe_name("ffmpeg"));
+    let ffprobe = dir.join(exe_name("ffprobe"));
+    ffmpeg.is_file()
+        && ffprobe.is_file()
+        && crate::system_check::verify_runs(&ffmpeg, "-version").await
+        && crate::system_check::verify_runs(&ffprobe, "-version").await
+}
+
+/// Installs the pinned build, returning whether new binaries were downloaded.
+pub async fn install(progress: &(dyn Fn(String) + Sync)) -> Result<bool, String> {
     if !is_supported() {
         return Err("このOS/CPUではFFmpegの自動ダウンロードに対応していません。".to_string());
     }
-    let target = managed_dir().ok_or_else(|| "アプリのデータフォルダを取得できませんでした。".to_string())?;
-    let root = target
-        .parent()
-        .map(Path::to_path_buf)
+    let root = MANAGED_ROOT
+        .get()
         .ok_or_else(|| "アプリのデータフォルダを取得できませんでした。".to_string())?;
+    let target = root.join(FFMPEG_VERSION);
+    fs::create_dir_all(root)
+        .map_err(|e| format!("FFmpeg用フォルダを作成できませんでした ({}): {}", root.display(), e))?;
+    let lock = lock_install(root, progress).await?;
+    remove_stale_staging_dirs(root);
+    if binaries_work(&target).await {
+        return Ok(false);
+    }
 
     let staging = root.join(format!("{}.partial-{}", FFMPEG_VERSION, std::process::id()));
-    let _ = std::fs::remove_dir_all(&staging);
-    std::fs::create_dir_all(&staging)
+    fs::create_dir(&staging)
         .map_err(|e| format!("FFmpeg用フォルダを作成できませんでした ({}): {}", staging.display(), e))?;
 
-    let result = install_into(&staging, progress).await;
+    let result = install_into(&staging, &lock, progress).await;
     if let Err(error) = result {
-        let _ = std::fs::remove_dir_all(&staging);
+        let _ = fs::remove_dir_all(&staging);
         return Err(error);
+    }
+    if !binaries_work(&staging).await {
+        let _ = fs::remove_dir_all(&staging);
+        return Err("ダウンロードしたFFmpegを起動できませんでした。".to_string());
     }
 
     // Replace any previous (broken) copy, then move the verified files into place.
-    let _ = std::fs::remove_dir_all(&target);
-    std::fs::rename(&staging, &target).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&staging);
+    match fs::remove_dir_all(&target) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!("古いFFmpegを削除できませんでした ({}): {}", target.display(), e));
+        }
+    }
+    fs::rename(&staging, &target).map_err(|e| {
+        let _ = fs::remove_dir_all(&staging);
         format!("FFmpegを配置できませんでした ({}): {}", target.display(), e)
     })?;
 
     progress(format!("FFmpeg {} を {} に準備しました。", FFMPEG_VERSION, target.display()));
-    Ok(target)
+    Ok(true)
 }
 
-async fn install_into(staging: &Path, progress: &(dyn Fn(String) + Sync)) -> Result<(), String> {
+async fn install_into(
+    staging: &Path,
+    lock: &Arc<File>,
+    progress: &(dyn Fn(String) + Sync),
+) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .read_timeout(Duration::from_secs(60))
@@ -246,7 +365,10 @@ async fn install_into(staging: &Path, progress: &(dyn Fn(String) + Sync)) -> Res
         let archive_for_task = archive.clone();
         let out_dir = staging.to_path_buf();
         let binaries = asset.binaries;
+        let lock = Arc::clone(lock);
         tauri::async_runtime::spawn_blocking(move || {
+            // Extraction can keep running if the async install is cancelled.
+            let _lock = lock;
             extract_binaries(&archive_for_task, binaries, &out_dir)
         })
         .await
@@ -271,12 +393,43 @@ mod tests {
 
     #[test]
     fn both_binaries_are_covered() {
-        if !is_supported() {
+        if ASSETS.is_empty() {
             return;
         }
         for base in ["ffmpeg", "ffprobe"] {
             assert!(ASSETS.iter().any(|a| a.binaries.contains(&base)), "{}", base);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pinned_build_requires_macos_12() {
+        assert!(!supports_macos_version("10.15.7\n"));
+        assert!(!supports_macos_version("11.7.10\n"));
+        assert!(supports_macos_version("12.0\n"));
+        assert!(supports_macos_version("26.1\n"));
+        assert!(!supports_macos_version(""));
+    }
+
+    #[test]
+    fn startup_cleanup_leaves_staging_alone_while_install_is_locked() {
+        let root = std::env::temp_dir().join(format!("vte-ffmpeg-cleanup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let staging = root.join("9.0.partial-123");
+        let installed = root.join("9.0");
+        fs::create_dir_all(&staging).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+
+        let lock = open_install_lock(&root).unwrap();
+        lock.try_lock().unwrap();
+        clean_up_interrupted_download(&root);
+        assert!(staging.is_dir());
+
+        drop(lock);
+        clean_up_interrupted_download(&root);
+        assert!(!staging.exists());
+        assert!(installed.is_dir());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     /// Real network download. Run with: cargo test --lib -- --ignored downloads_and_runs
@@ -286,7 +439,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("vte-ffmpeg-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         set_managed_root(root.clone());
-        let dir = install(&|m: String| println!("{}", m)).await.expect("install");
+        let stale = root.join(format!("{}.partial-0", FFMPEG_VERSION));
+        fs::create_dir_all(&stale).unwrap();
+        fs::write(stale.join("download-0.zip"), b"partial download").unwrap();
+        let progress = |m: String| println!("{}", m);
+        let (first, second) = tokio::join!(install(&progress), install(&progress));
+        assert!(first.expect("install"));
+        assert!(!second.expect("reuse the installed binaries"));
+        assert!(!stale.exists());
+        let dir = managed_dir().unwrap();
         for base in ["ffmpeg", "ffprobe"] {
             let bin = managed_binary(base).unwrap();
             assert!(bin.starts_with(&dir));

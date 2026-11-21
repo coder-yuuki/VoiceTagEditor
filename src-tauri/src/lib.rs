@@ -54,7 +54,11 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
             if let Ok(dir) = app.path().app_local_data_dir() {
-                ffmpeg_download::set_managed_root(dir.join("ffmpeg"));
+                let root = dir.join("ffmpeg");
+                ffmpeg_download::set_managed_root(root.clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    ffmpeg_download::clean_up_interrupted_download(&root);
+                });
             }
             #[cfg(desktop)]
             app.handle()

@@ -1,6 +1,6 @@
 [package]
 name = "voicetageditor"
-version = "0.9.8"
+version = "0.9.9"
 description = "Desktop app to edit and convert audio tags (MP3/FLAC/WAV/M4A) with FFmpeg and Tauri."
 authors = ["Noguchi Yuuki"]
 edition = "2021"
@@ -25,7 +25,7 @@ serde_json = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["process", "io-util", "sync"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "time"] }
 base64 = "0.22"
 which = "6.0"
 futures = "0.3"

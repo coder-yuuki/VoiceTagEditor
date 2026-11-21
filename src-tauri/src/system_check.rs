@@ -189,7 +189,7 @@ fn ffprobe_candidates() -> Vec<PathBuf> {
     cands
 }
 
-async fn verify_runs(path: &Path, arg: &str) -> bool {
+pub(crate) async fn verify_runs(path: &Path, arg: &str) -> bool {
     let mut cmd = Command::new(path);
     #[cfg(windows)]
     {
@@ -501,13 +501,17 @@ pub async fn ensure_ffmpeg_installed(app: tauri::AppHandle) -> Result<FfmpegInst
         let progress_app = app.clone();
         let progress = move |msg: String| emit_install_progress(&progress_app, "status", msg);
         match crate::ffmpeg_download::install(&progress).await {
-            Ok(_) => {
+            Ok(installed) => {
                 if check_ffmpeg().await? {
                     let source = format!("FFmpeg {} (download)", crate::ffmpeg_download::FFMPEG_VERSION);
                     return Ok(FfmpegInstallResult {
                         available: true,
-                        installed: true,
-                        message: "FFmpegをダウンロードして準備しました。".to_string(),
+                        installed,
+                        message: if installed {
+                            "FFmpegをダウンロードして準備しました。".to_string()
+                        } else {
+                            "FFmpegは利用可能です。".to_string()
+                        },
                         package_manager: Some(source),
                     });
                 }
