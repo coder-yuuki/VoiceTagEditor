@@ -7,6 +7,7 @@ mod models;
 mod metadata;
 mod fs_scan;
 mod system_check;
+mod ffmpeg_download;
 mod utils;
 mod processing;
 mod cache;
@@ -51,6 +52,10 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::Manager;
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                ffmpeg_download::set_managed_root(dir.join("ffmpeg"));
+            }
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;

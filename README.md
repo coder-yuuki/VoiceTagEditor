@@ -71,9 +71,17 @@ GitHub に慣れていない方は、次の 3 ステップだけでインスト�
 <summary><strong>初回起動時の音声エンジン（FFmpeg）の自動準備について</strong></summary>
 
 - VoiceTagEditor は音声の解析・保存に FFmpeg を使用します（アプリ本体には同梱していません）。
-- 初回起動時に FFmpeg が見つからない場合は、自動でインストールを試みます。
-  - **macOS**：[Homebrew](https://brew.sh/) が必要です。
-  - **Windows**：`winget` / `Chocolatey` / `Scoop` のいずれかを使用します。
+- 初回起動時に FFmpeg が見つからない場合は、**アプリが自動でダウンロードして準備します**（初回のみ。macOS 約 55MB / Windows 約 115MB）。Homebrew や winget などの事前準備は不要です。
+  - 保存先はアプリ専用のデータフォルダで、システムの設定（PATH など）は変更しません。
+    - macOS：`~/Library/Application Support/com.noguchiyuuki.voicetageditor/ffmpeg/`
+    - Windows：`%LOCALAPPDATA%\com.noguchiyuuki.voicetageditor\ffmpeg\`
+  - ダウンロードするのはバージョン固定のビルド（FFmpeg 9.1）で、SHA256 で改ざんがないことを確認してから使います。
+    - macOS：[ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/)（Apple Silicon / Intel）
+    - Windows：[gyan.dev](https://www.gyan.dev/ffmpeg/builds/)（essentials build）
+  - すでに FFmpeg がインストールされている場合は、そちらをそのまま使います。
+  - 自動ダウンロード版は macOS 12 以降が必要です。それより古い macOS では Homebrew などで FFmpeg を入れてください。
+  - ダウンロードに失敗した場合は、Homebrew / winget / Chocolatey / Scoop が使える環境ならそれを使ってインストールを試みます。
+- FFmpeg は [FFmpeg プロジェクト](https://ffmpeg.org/) のソフトウェアで、LGPL / GPL ライセンスで配布されています。
 
 </details>
 
