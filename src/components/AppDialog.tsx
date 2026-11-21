@@ -1,4 +1,6 @@
-import { AlertCircle, CheckCircle2, Info, X } from 'lucide-preact';
+import { useEffect } from 'preact/hooks';
+import { AlertCircle, CheckCircle2, FolderOpen, Info, X } from 'lucide-preact';
+import { useI18n } from '../i18n';
 import type { AppMode } from '../types';
 
 export interface AppDialogOptions {
@@ -8,6 +10,10 @@ export interface AppDialogOptions {
   technicalDetail?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+  };
   tone?: 'error' | 'warning' | 'info' | 'success';
 }
 
@@ -18,6 +24,20 @@ interface AppDialogProps {
 }
 
 export function AppDialog({ options, mode, onResult }: AppDialogProps) {
+  const { t } = useI18n();
+
+  useEffect(() => {
+    if (!options) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onResult(options.cancelLabel ? false : true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [options, onResult]);
+
   if (!options) {
     return null;
   }
@@ -47,7 +67,11 @@ export function AppDialog({ options, mode, onResult }: AppDialogProps) {
   }[tone];
 
   return (
-    <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+    <div
+      class="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+    >
       <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl">
         <div class="flex items-start gap-4 p-6">
           <div class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${toneStyles.iconClass}`}>
@@ -61,7 +85,7 @@ export function AppDialog({ options, mode, onResult }: AppDialogProps) {
                   type="button"
                   onClick={() => onResult(true)}
                   class="-mr-2 -mt-2 rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                  aria-label="閉じる"
+                  aria-label={t.common.close}
                 >
                   <X size={17} />
                 </button>
@@ -70,14 +94,14 @@ export function AppDialog({ options, mode, onResult }: AppDialogProps) {
             <p class="mt-2 whitespace-pre-line text-sm leading-6 text-zinc-700">{options.message}</p>
             {options.guidance && (
               <div class="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm leading-5 text-zinc-700">
-                <span class="font-semibold">お試しください：</span>
+                <span class="font-semibold">{t.appDialog.tryLabel}</span>
                 {options.guidance}
               </div>
             )}
             {mode === 'advanced' && options.technicalDetail && (
               <details class="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
                 <summary class="cursor-pointer text-xs font-medium text-zinc-600">
-                  技術的な詳細を表示
+                  {t.appDialog.showTechnicalDetails}
                 </summary>
                 <pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-5 text-zinc-600">
                   {options.technicalDetail}
@@ -87,7 +111,17 @@ export function AppDialog({ options, mode, onResult }: AppDialogProps) {
           </div>
         </div>
 
-        <div class="flex justify-end gap-3 border-t border-zinc-100 px-6 py-4">
+        <div class="flex flex-wrap items-center justify-end gap-2.5 border-t border-zinc-100 px-6 py-4">
+          {options.secondaryAction && (
+            <button
+              type="button"
+              onClick={options.secondaryAction.onClick}
+              class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              <FolderOpen size={15} />
+              {options.secondaryAction.label}
+            </button>
+          )}
           {options.cancelLabel && (
             <button
               type="button"
@@ -102,7 +136,7 @@ export function AppDialog({ options, mode, onResult }: AppDialogProps) {
             onClick={() => onResult(true)}
             class={`rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm ${toneStyles.buttonClass}`}
           >
-            {options.confirmLabel ?? '閉じる'}
+            {options.confirmLabel ?? t.common.close}
           </button>
         </div>
       </div>

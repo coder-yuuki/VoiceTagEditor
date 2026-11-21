@@ -1,0 +1,388 @@
+export type Locale = 'ja' | 'en' | 'ko' | 'zh-Hant';
+
+export interface LocaleOption {
+  code: Locale;
+  label: string;
+  shortLabel: string;
+  htmlLang: string;
+}
+
+export const LOCALE_OPTIONS: readonly LocaleOption[] = [
+  { code: 'ja', label: '日本語', shortLabel: 'JA', htmlLang: 'ja' },
+  { code: 'en', label: 'English', shortLabel: 'EN', htmlLang: 'en' },
+  { code: 'ko', label: '한국어', shortLabel: 'KO', htmlLang: 'ko' },
+  { code: 'zh-Hant', label: '繁體中文（台灣）', shortLabel: '繁中', htmlLang: 'zh-Hant-TW' },
+] as const;
+
+export interface Translations {
+  app: {
+    subtitle: string;
+  };
+  common: {
+    close: string;
+    cancel: string;
+    confirm: string;
+    back: string;
+    next: string;
+    save: string;
+    delete: string;
+    retry: string;
+    choose: string;
+    done: string;
+    ok: string;
+    openFolder: string;
+    language: string;
+  };
+  toolbar: {
+    addFiles: string;
+    addFilesTooltip: string;
+    addFolder: string;
+    addFolderTooltip: string;
+    sort: string;
+    sortTooltip: string;
+    checkUpdates: string;
+    checkUpdatesTooltip: string;
+    about: string;
+    aboutShort: string;
+    clearAll: string;
+    clearAllMenu: string;
+    guideTooltip: string;
+    moreActions: string;
+    modeSwitchLabel: string;
+    modeSimple: string;
+    modeAdvanced: string;
+    saveTooltipReady: string;
+    saveTooltipNoTracks: string;
+    waitForFfmpeg: string;
+  };
+  steps: {
+    selectAudio: string;
+    workInfo: string;
+    reviewTracks: string;
+    save: string;
+  };
+  wizard: {
+    step1: {
+      title: string;
+      description: string;
+      pickFiles: string;
+      pickFolder: string;
+      preparingAudio: string;
+      loadingAudio: string;
+      loadedSummary: string;
+      dropHint: string;
+      supportedFormats: string;
+    };
+    step2: {
+      title: string;
+      emptyTitleWarning: string;
+      scrollGuide: string;
+      moreBelow: string;
+    };
+    step3: {
+      trackCount: string;
+      addFiles: string;
+      addFolder: string;
+      emptyTracks: string;
+      backToSelectAudio: string;
+    };
+    step4: {
+      title: string;
+      subtitle: string;
+      outputFolderLabel: string;
+      outputFolderEmpty: string;
+      outputFolderHint: string;
+      recommendedTitle: string;
+      formatLabel: string;
+      qualityLabel: string;
+      qualityHigh: string;
+      duplicateFilesLabel: string;
+      duplicateFilesValue: string;
+      saveCount: string;
+      startSave: string;
+    };
+    complete: {
+      title: string;
+      savedSummary: string;
+      savedLocation: string;
+      openOutputFolder: string;
+      editAnotherWork: string;
+    };
+  };
+  sidebar: {
+    title: string;
+    simpleDescription: string;
+  };
+  albumForm: {
+    selectCoverAria: string;
+    coverAlt: string;
+    changeCover: string;
+    addCover: string;
+    dropOrClickLine1: string;
+    dropOrClickLine2: string;
+    coverSet: string;
+    removeCover: string;
+    sourceFolderImage: string;
+    sourceEmbeddedSimple: string;
+    sourceEmbeddedAdvanced: string;
+    sourceManualSimple: string;
+    sourceManualAdvanced: string;
+    workTitleLabel: string;
+    workTitleHint: string;
+    workTitlePlaceholder: string;
+    circleLabel: string;
+    circleHint: string;
+    circlePlaceholder: string;
+    releaseDateSimple: string;
+    releaseDateAdvanced: string;
+    releaseDateHint: string;
+    tagsSimple: string;
+    tagsAdvanced: string;
+    tagsHint: string;
+    tagsCompactHint: string;
+    tagsPlaceholderEmpty: string;
+    tagsPlaceholderMore: string;
+    removeTagAria: string;
+  };
+  trackTable: {
+    emptyTitle: string;
+    emptyDescription: string;
+    duplicateWarning: string;
+    bulkVoiceActorsLabel: string;
+    bulkVoiceActorsPlaceholder: string;
+    applyToAll: string;
+    copyFirstToAll: string;
+    copyFirstToAllTooltip: string;
+    renumber: string;
+    renumberTooltip: string;
+    sortByNumber: string;
+    sortByNumberTooltip: string;
+    copyAboveHint: string;
+    colPlay: string;
+    colOrder: string;
+    colDelete: string;
+    colDisc: string;
+    colTrack: string;
+    colTitle: string;
+    colVoiceActors: string;
+    noPreviewFile: string;
+    stopPreview: string;
+    previewFailedRetry: string;
+    playPreview: string;
+    playPreviewAria: string;
+    stopPreviewAria: string;
+    moveUpAria: string;
+    moveDownAria: string;
+    deleteTrackTooltip: string;
+    deleteTrackAria: string;
+    discNumberAria: string;
+    trackNumberAria: string;
+    duplicateBadge: string;
+    titleAria: string;
+    clickToCopyArtist: string;
+    removeArtistAria: string;
+    artistPlaceholderEmpty: string;
+    artistPlaceholderMore: string;
+    copyAllArtistsTooltip: string;
+    artistInputHint: string;
+    sameAsAboveShort: string;
+    sameAsAboveLong: string;
+    untitledTrack: string;
+    totalDuration: string;
+    dragToReorder: string;
+    undo: string;
+    redo: string;
+    titleTools: string;
+    stripLeadingNumbers: string;
+    cleanWhitespace: string;
+    replaceTitleSection: string;
+    findPlaceholder: string;
+    replacePlaceholder: string;
+    applyReplace: string;
+    matchCount: string;
+    noChanges: string;
+  };
+  player: {
+    nowPlaying: string;
+    paused: string;
+    previousTrack: string;
+    nextTrack: string;
+    rewind10: string;
+    forward10: string;
+    play: string;
+    pause: string;
+    mute: string;
+    unmute: string;
+    volume: string;
+    seek: string;
+    closePlayer: string;
+  };
+  exportDialog: {
+    title: string;
+    simpleDescription: string;
+    outputFolderLabel: string;
+    outputFolderEmpty: string;
+    outputFolderHint: string;
+    recommendedTitle: string;
+    advancedSettings: string;
+    duplicateModeLabel: string;
+    duplicateRename: string;
+    duplicateOverwrite: string;
+    formatLabel: string;
+    encodeModeLabel: string;
+    encodeReencode: string;
+    encodeCopy: string;
+    encodeCopyHint: string;
+    encodeReencodeHint: string;
+    qualityLabel: string;
+    qualityHighest: string;
+    qualityHigh: string;
+    qualityMedium: string;
+    qualityLow: string;
+    qualityCopyHint: string;
+    startSave: string;
+  };
+  onboarding: {
+    badge: string;
+    hintTitle: string;
+    startButton: string;
+    steps: Array<{
+      title: string;
+      desc: string;
+      hints: string[];
+    }>;
+  };
+  about: {
+    title: string;
+    tabOverview: string;
+    tabLicense: string;
+    tabThirdParty: string;
+    tabPrivacy: string;
+    authorLabel: string;
+    overviewSimple: string;
+    overviewAdvanced: string;
+    privacyNote: string;
+    privacySummaryTitle: string;
+    privacySummaryBody: string;
+  };
+  ffmpegBanner: {
+    preparing: string;
+    ready: string;
+    failed: string;
+    verifiedDetail: string;
+    autoInstallStart: string;
+    showTechnicalDetails: string;
+  };
+  processing: {
+    savingTitle: string;
+    loadingTitle: string;
+    processedCount: string;
+    statusProcessing: string;
+    statusCompleted: string;
+    statusError: string;
+    pleaseWait: string;
+  };
+  appDialog: {
+    tryLabel: string;
+    showTechnicalDetails: string;
+  };
+  dragDrop: {
+    title: string;
+    subtitle: string;
+    formats: string;
+  };
+  toast: {
+    copied: string;
+    appliedVoiceActors: string;
+    copiedFirstTrackVoiceActors: string;
+    copiedPreviousVoiceActors: string;
+    renumberedTracks: string;
+    sortedTracks: string;
+    skippedDuplicates: string;
+    openFolderFailed: string;
+    formattedTitles: string;
+    undone: string;
+    redone: string;
+  };
+  fileDialogs: {
+    selectOutputFolder: string;
+    selectCoverImage: string;
+    filterImages: string;
+    selectAudioFiles: string;
+    filterAudio: string;
+    selectFolders: string;
+  };
+  dialogs: {
+    updateUpToDateTitle: string;
+    updateUpToDateMessage: string;
+    updateAvailableTitle: string;
+    updateAvailableMessage: string;
+    updateReleaseNotesHeader: string;
+    updateInstallConfirm: string;
+    updateLater: string;
+    updateDoneTitle: string;
+    updateDoneMessage: string;
+    updateRestartRequiredTitle: string;
+    updateRestartRequiredMessage: string;
+    updateCheckFailedTitle: string;
+    updateCheckFailedMessage: string;
+    updateCheckFailedGuidance: string;
+    duplicateFilesTitle: string;
+    duplicateFilesMessage: string;
+    addAudioFailedTitle: string;
+    addAudioFailedMessage: string;
+    addAudioFailedGuidance: string;
+    partialReadFailedTitle: string;
+    partialReadFailedMessage: string;
+    partialReadFailedGuidance: string;
+    readAudioFailedTitle: string;
+    readAudioFailedMessage: string;
+    readAudioFailedGuidance: string;
+    readFolderFailedTitle: string;
+    readFolderFailedDroppedMessage: string;
+    readFolderFailedSelectedMessage: string;
+    readFolderFailedGuidance: string;
+    noAudioInDroppedFolderTitle: string;
+    noAudioInDroppedFolderMessage: string;
+    noFilesInSelectedFolderTitle: string;
+    noFilesInSelectedFolderMessage: string;
+    removeTrackTitle: string;
+    removeTrackMessage: string;
+    removeTrackConfirm: string;
+    selectOutputFailedTitle: string;
+    selectOutputFailedMessage: string;
+    selectOutputFailedGuidance: string;
+    selectImageFailedTitle: string;
+    selectImageFailedMessage: string;
+    selectImageFailedGuidance: string;
+    selectAudioFailedTitle: string;
+    selectAudioFailedMessage: string;
+    selectAudioFailedGuidance: string;
+    selectFolderFailedTitle: string;
+    selectFolderFailedMessage: string;
+    selectFolderFailedGuidance: string;
+    missingOutputFolderTitle: string;
+    missingOutputFolderMessage: string;
+    missingOutputFolderGuidance: string;
+    partialSaveFailedTitle: string;
+    partialSaveFailedMessage: string;
+    partialSaveFailedGuidance: string;
+    partialSaveRetry: string;
+    partialSaveFinish: string;
+    maxRetriesTitle: string;
+    maxRetriesMessage: string;
+    maxRetriesGuidance: string;
+    saveCompleteTitle: string;
+    saveCompleteMessage: string;
+    saveFailedTitle: string;
+    saveFailedMessage: string;
+    saveFailedGuidance: string;
+    saveStartFailedTitle: string;
+    saveStartFailedMessage: string;
+    saveStartFailedGuidance: string;
+    clearAllTitle: string;
+    clearAllSimpleMessage: string;
+    clearAllAdvancedMessage: string;
+    clearAllConfirm: string;
+  };
+}

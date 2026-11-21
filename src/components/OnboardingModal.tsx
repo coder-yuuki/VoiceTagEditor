@@ -1,9 +1,9 @@
+import { useEffect } from 'preact/hooks';
 import { AlertCircle, Check, X } from 'lucide-preact';
-import type { OnboardingStep } from '../types';
+import { useI18n } from '../i18n';
 
 interface OnboardingModalProps {
   isOpen: boolean;
-  steps: OnboardingStep[];
   currentStep: number;
   onStepChange: (step: number) => void;
   onClose: () => void;
@@ -11,115 +11,118 @@ interface OnboardingModalProps {
 
 export function OnboardingModal({
   isOpen,
-  steps,
   currentStep,
   onStepChange,
   onClose,
 }: OnboardingModalProps) {
-  if (!isOpen) {
+  const { t, fmt } = useI18n();
+  const steps = t.onboarding.steps;
+  const safeStep = Math.min(Math.max(0, currentStep), steps.length - 1);
+  const stepData = steps[safeStep];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !stepData) {
     return null;
   }
 
   return (
-    <div class="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-black/30 animate-in fade-in duration-200">
-      <div class="bg-white rounded-xl shadow-2xl w-[640px] max-w-[92vw] p-8 relative scale-100 animate-in zoom-in-95 duration-200">
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="relative w-[640px] max-w-[92vw] scale-100 rounded-2xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
         <button
+          type="button"
           onClick={onClose}
-          class="absolute right-4 top-4 text-zinc-400 hover:text-zinc-600 transition-colors p-1 hover:bg-zinc-100 rounded-full"
-          aria-label="閉じる"
-          title="閉じる"
+          class="absolute right-4 top-4 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
+          aria-label={t.common.close}
+          title={t.common.close}
         >
           <X size={20} />
         </button>
 
         <div class="mb-6">
-          <div class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-2">
-            かんたんガイド　{currentStep + 1} / {steps.length}
+          <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-blue-600">
+            {fmt(t.onboarding.badge, { current: safeStep + 1, total: steps.length })}
           </div>
-          <h2 class="text-2xl font-bold text-zinc-800">{steps[currentStep].title}</h2>
+          <h2 class="text-2xl font-bold text-zinc-800">{stepData.title}</h2>
         </div>
 
-        <div class="text-base text-zinc-600 leading-relaxed whitespace-pre-line mb-8">
-          {steps[currentStep].desc}
+        <div class="mb-6 whitespace-pre-line text-base leading-relaxed text-zinc-600">
+          {stepData.desc}
         </div>
 
-        <div class="bg-zinc-50 border border-zinc-200 rounded-lg p-5 text-sm text-zinc-600 mb-8">
-          {currentStep === 0 && (
-            <>
-              <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
-                <AlertCircle size={16} class="text-blue-500" />
-                ヒント
-              </div>
-              <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>「ファイルを選ぶ」か「フォルダを選ぶ」から追加できます。</li>
-                <li>フォルダを選ぶと、中にある音声とカバー画像をまとめて読み込みます。</li>
-              </ul>
-            </>
-          )}
-          {currentStep === 1 && (
-            <>
-              <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
-                <AlertCircle size={16} class="text-blue-500" />
-                ヒント
-              </div>
-              <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>トラック名や声優名は、一覧の入力欄をそのまま書き換えられます。</li>
-                <li>同じ番号がある場合は、該当する行が黄色で表示されます。</li>
-              </ul>
-            </>
-          )}
-          {currentStep === 2 && (
-            <>
-              <div class="font-semibold text-zinc-700 mb-2 flex items-center gap-2">
-                <AlertCircle size={16} class="text-blue-500" />
-                ヒント
-              </div>
-              <ul class="list-disc pl-5 space-y-1.5 marker:text-zinc-400">
-                <li>かんたんモードでは保存先を選ぶだけで、おすすめ設定を使用します。</li>
-                <li>保存後は、音声が最後まで正しく読み取れることも自動で確認します。</li>
-              </ul>
-            </>
-          )}
+        <div class="mb-8 rounded-xl border border-zinc-200 bg-zinc-50 p-5 text-sm text-zinc-600">
+          <div class="mb-2 flex items-center gap-2 font-semibold text-zinc-700">
+            <AlertCircle size={16} class="text-blue-500" />
+            {t.onboarding.hintTitle}
+          </div>
+          <ul class="list-disc space-y-1.5 pl-5 marker:text-zinc-400">
+            {stepData.hints.map((hint, idx) => (
+              <li key={idx}>{hint}</li>
+            ))}
+          </ul>
         </div>
 
-        <div class="flex items-center justify-center gap-2 mb-8">
-          {steps.map((_, index) => (
-            <div
+        <div class="mb-8 flex items-center justify-center gap-2">
+          {steps.map((step, index) => (
+            <button
               key={index}
-              class={`w-2.5 h-2.5 rounded-full transition-all ${index === currentStep ? 'bg-blue-600 scale-110' : 'bg-zinc-200'}`}
-            ></div>
+              type="button"
+              onClick={() => onStepChange(index)}
+              aria-label={`${index + 1}. ${step.title}`}
+              class={`h-2.5 rounded-full transition-all ${
+                index === safeStep ? 'w-6 bg-blue-600' : 'w-2.5 bg-zinc-200 hover:bg-zinc-300'
+              }`}
+            />
           ))}
         </div>
 
-        <div class="flex items-center justify-between pt-4 border-t border-zinc-100">
+        <div class="flex items-center justify-between border-t border-zinc-100 pt-4">
           <button
+            type="button"
             onClick={onClose}
-            class="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 transition-colors"
+            class="px-4 py-2 text-sm text-zinc-500 transition-colors hover:text-zinc-800"
           >
-            閉じる
+            {t.common.close}
           </button>
           <div class="flex items-center gap-3">
             <button
-              onClick={() => onStepChange(Math.max(0, currentStep - 1))}
-              disabled={currentStep === 0}
-              class="px-4 py-2 border border-zinc-300 rounded-md text-sm text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              type="button"
+              onClick={() => onStepChange(Math.max(0, safeStep - 1))}
+              disabled={safeStep === 0}
+              class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 transition-all hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              戻る
+              {t.common.back}
             </button>
-            {currentStep < steps.length - 1 ? (
+            {safeStep < steps.length - 1 ? (
               <button
-                onClick={() => onStepChange(Math.min(steps.length - 1, currentStep + 1))}
-                class="px-4 py-2 border border-transparent rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-all"
+                type="button"
+                onClick={() => onStepChange(Math.min(steps.length - 1, safeStep + 1))}
+                class="rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700"
               >
-                次へ
+                {t.common.next}
               </button>
             ) : (
               <button
+                type="button"
                 onClick={onClose}
-                class="px-4 py-2 border border-transparent rounded-md text-sm bg-green-600 text-white hover:bg-green-700 shadow-sm transition-all flex items-center gap-2"
+                class="flex items-center gap-2 rounded-lg border border-transparent bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-700"
               >
                 <Check size={16} />
-                はじめる
+                {t.onboarding.startButton}
               </button>
             )}
           </div>

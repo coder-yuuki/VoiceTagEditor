@@ -1,145 +1,138 @@
-# VoiceTagEditor
-
-音声ファイルのメタデータ・タグ編集を簡単に行えるデスクトップアプリケーションです。
+<p align="center">
+  <strong>日本語</strong> &nbsp;|&nbsp;
+  <a href="./docs/README.en.md">English</a> &nbsp;|&nbsp;
+  <a href="./docs/README.ko.md">한국어</a> &nbsp;|&nbsp;
+  <a href="./docs/README.zh-TW.md">繁體中文（台灣）</a>
+</p>
 
 <p align="center">
-  <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
-    <img alt="Latest release" src="https://img.shields.io/github/v/release/coder-yuuki/VoiceTagEditor?label=Latest&style=for-the-badge&color=2563eb" />
-  </a>
+  <img src="./src-tauri/icons/128x128@2x.png" alt="VoiceTagEditor icon" width="96" height="96" />
+</p>
+
+<h1 align="center">VoiceTagEditor</h1>
+
+<p align="center">
+  音声作品・ボイスドラマのタグ、カバー画像、トラック番号をかんたんに整えて保存できるデスクトップアプリ。<br />
+  <sub>WAV / MP3 / FLAC / M4A 対応・完全ローカル動作・日本語 / English / 한국어 / 繁體中文（台灣）対応</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
-    <img alt="Download for macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" />
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/coder-yuuki/VoiceTagEditor?label=Latest%20Version&style=flat-square&color=2563eb" />
   </a>
-  &nbsp;
+  <img alt="Platform" src="https://img.shields.io/badge/macOS%20%7C%20Windows-Desktop-52525b?style=flat-square" />
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-16a34a?style=flat-square" />
+</p>
+
+<br />
+
+<p align="center">
   <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
-    <img alt="Download for Windows" src="https://img.shields.io/badge/Windows-x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
+    <img src="./docs/assets/download-macos.svg" alt="Download for macOS (.dmg)" width="268" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">
+    <img src="./docs/assets/download-windows.svg" alt="Download for Windows (.exe / .msi)" width="268" />
   </a>
 </p>
 
-<p align="center">
-  <sub>ボタンから <a href="https://github.com/coder-yuuki/VoiceTagEditor/releases/latest">Releases</a> ページへ移動します。macOS は <code>.dmg</code>、Windows は <code>.exe</code> または <code>.msi</code> を選んでください。</sub>
-</p>
+<br />
+
+## ダウンロード・インストール方法（はじめての方へ）
+
+GitHub に慣れていない方は、次の 3 ステップだけでインストールできます。
+
+1. 上の **macOS** または **Windows** のボタンをクリックして、最新リリースページを開きます。
+2. ページの下にある **Assets** から、お使いのパソコンに合うファイルを 1 つだけクリックしてダウンロードします。
+
+| OS | 選ぶファイル | インストール方法 |
+| --- | --- | --- |
+| **macOS**（Apple Silicon） | 末尾が **`.dmg`** のファイル | ダウンロードした `.dmg` を開き、アプリを **Applications** フォルダへドラッグします |
+| **Windows**（64-bit） | 末尾が **`-setup.exe`** または **`.msi`** のファイル | ダウンロードしたファイルをダブルクリックして画面の案内に従います |
+
+> **ポイント**：`Assets` にある `Source code (zip)`、`.sig`、`.tar.gz`、`latest.json` などはダウンロード不要です。
+
+<details>
+<summary><strong>初回起動時に警告が出た場合（macOS / Windows）</strong></summary>
+
+- **macOS（開発元を確認できない等のメッセージが出た場合）**
+  1. Finder の「アプリケーション」フォルダで `VoiceTagEditor` を **右クリック →「開く」** を選びます。
+  2. ダイアログでもう一度 **「開く」** をクリックします。
+  - うまく開けない場合は、ターミナルで以下を実行してください：
+    ```bash
+    xattr -dr com.apple.quarantine /Applications/VoiceTagEditor.app
+    ```
+- **Windows（Windows によって PC が保護されました と出た場合）**
+  - **「詳細情報」→「実行」** をクリックして進めてください。
+
+</details>
+
+<details>
+<summary><strong>初回起動時の音声エンジン（FFmpeg）の自動準備について</strong></summary>
+
+- VoiceTagEditor は音声の解析・保存に FFmpeg を使用します（アプリ本体には同梱していません）。
+- 初回起動時に FFmpeg が見つからない場合は、自動でインストールを試みます。
+  - **macOS**：[Homebrew](https://brew.sh/) が必要です。
+  - **Windows**：`winget` / `Chocolatey` / `Scoop` のいずれかを使用します。
+
+</details>
+
+---
+
+## かんたん 4 ステップで使える
+
+初めてでも迷わない **「かんたんモード」** と、1 画面で素早く編集できる **「詳細モード」** をいつでも切り替えられます。
+
+1. **音声を選ぶ** — ファイルや作品フォルダをドラッグ＆ドロップ。フォルダ内のカバー画像も自動で読み込みます。
+2. **作品情報を入力** — 作品名・サークル名・発売日・タグ・カバー画像を設定。
+3. **トラックを確認** — プレビュー再生（シークバー付き）で中身を確認しながら、タイトル・番号・声優を整理。
+4. **保存する** — 保存先フォルダを選ぶだけ。元のファイルを残したまま、`サークル名 / 作品名` フォルダに安全に書き出します。
+
+---
 
 ## 主な機能
 
-### メタデータ編集
-- **アルバム情報の編集**: タイトル、アーティスト、リリース日の設定
-- **トラック情報の管理**: 各楽曲のディスク番号、トラック番号、タイトル、アーティストの編集
-- **タグ管理**: アルバムやアーティストにタグを追加・削除
-- **アルバムアートワーク**: 画像ファイルをドラッグ&ドロップで簡単設定
+- **2 つの編集モード**：ガイド付きの「かんたんモード」と、全項目を一覧できる「詳細モード」
+- **多言語 UI**：日本語 / English / 한국어 / 繁體中文（台灣）に対応（ヘッダーから即時切替）
+- **ミニプレイヤーで試聴**：一覧からワンクリック再生、シークバー・±10 秒スキップ・前後トラック移動に対応
+- **トラック整理ツール**：
+  - ドラッグ＆ドロップや `↑↓` ボタンで並び替え
+  - 1 クリックでディスクごとに `01` から連番を振り直し
+  - **タイトル一括整形**（先頭の番号・記号除去、空白整理、検索して一括置換・削除）
+  - 各トラックの再生時間＆作品合計時間を表示
+- **声優の一括入力 & コピー**：全トラック一括適用、先頭トラックからコピー、上のトラックからコピー
+- **安心設計**：Undo / Redo（`⌘Z` / `Ctrl+Z`）、前回の出力先フォルダ記憶、保存後の自動デコード検証、**完全ローカル処理（外部送信なし）**
 
-### 音声ファイル対応
-- **メタデータ抽出**: 音声ファイルから既存のメタデータを自動読み込み
-- **FFmpeg連携**: 高精度な音声ファイル処理
-- **進捗表示**: 処理状況をリアルタイムで確認
+---
 
-### 使いやすさ
-- **ドラッグ&ドロップ対応**: 直感的なファイル操作
-- **タグベースUI**: チップ形式で視覚的にタグを管理
-- **自動ソート**: ディスク・トラック番号順に自動整列
-- **日本語インターフェース**: 完全日本語対応
+## プライバシーとライセンス
 
-## 対象ユーザー
+- **プライバシー**：音声ファイルやタグ情報はすべてお使いのパソコン内だけで処理されます。詳細は [PRIVACY.md](./PRIVACY.md) をご覧ください。
+- **ライセンス**：MIT License（[LICENSE](./LICENSE) / サードパーティ表記：[THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)）
 
-- 音楽ライブラリを整理したい方
-- 音声ファイルのメタデータを効率的に編集したい方
-- アルバム単位での楽曲管理を行いたい方
-- 音声コンテンツ制作者
+---
 
-## 技術仕様
+<details>
+<summary><strong>開発者向け情報（ビルド・技術スタック・リリース）</strong></summary>
 
-- **フロントエンド**: Preact + TypeScript + Vite
-- **バックエンド**: Rust (Tauri v2)
-- **パッケージマネージャー**: pnpm
-- **対応OS**: Windows、macOS（Linuxは現状ソースからビルドして利用）
+### 技術スタック
+- **Frontend**: Preact + TypeScript + Vite + Tailwind CSS
+- **Backend**: Rust (Tauri v2)
+- **Package Manager**: pnpm (`10.14.0`)
 
-## 必要要件 / 注意事項
-
-- 本アプリは音声の変換・埋め込み処理で FFmpeg を使用します。FFmpeg は同梱していません。
-  - 起動時に FFmpeg / ffprobe が見つからない場合は、利用可能なパッケージマネージャー経由で自動インストールを試みます。
-  - macOS: Homebrew が必要です。
-  - Windows: winget / Chocolatey / Scoop のいずれかを利用します。
-  - Linux: ディストリビューションのパッケージマネージャーを利用します（権限設定によっては手動インストールが必要です）。
-- OPUS のカバーアートは METADATA_BLOCK_PICTURE で埋め込みます。再生ソフトによっては表示されない場合があります。
-
-## 開発環境セットアップ
-
-### 必要な環境
-- Node.js (>= 18) と pnpm
-- Rust toolchain
-- Tauri CLI
-- FFmpeg（音声処理用）
-
-### 開発開始手順
-
+### ローカル開発
 ```bash
-# 依存関係のインストール
 pnpm install
-
-# 開発サーバー起動（フロントエンド + Tauri）
 pnpm tauri dev
-
-# フロントエンドのみ起動
-pnpm dev
 ```
 
-### ビルド
-
+### ビルド・検証
 ```bash
-# 本番用ビルド
-pnpm tauri build
-
-# フロントエンドのみビルド
-pnpm build
-
-# 型チェック
-pnpm tsc
+pnpm build       # TypeScript 型チェック + フロントエンドビルド
+pnpm tauri build # 本番アプリビルド
 ```
 
-## リリース
+### リリース
+`v*` 形式のタグを push すると `.github/workflows/tauri-release.yml` が macOS / Windows 向けビルドと GitHub Release を自動作成します。
 
-- GitHub Actions の `Tauri Release` ワークフローは、`v*` 形式のタグを push すると実行されます。
-- 署名/公証を行う場合は、必要な秘密情報（証明書、Apple Developer 関連）を GitHub Secrets に登録します。
-  - macOS（任意だが推奨）
-    - `APPLE_CERTIFICATE`: Developer ID Application の `.p12` をBase64化した文字列
-    - `APPLE_CERTIFICATE_PASSWORD`: 証明書パスワード
-    - `APPLE_TEAM_ID`: チームID
-    - 公証はいずれかを使用
-      - Apple ID: `APPLE_ID`, `APPLE_PASSWORD`（App-specific password）
-      - App Store Connect API Key: `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`
-  - Windows（任意）
-    - `WINDOWS_CERTIFICATE`: コードサイン用 `.pfx` をBase64化
-    - `WINDOWS_CERTIFICATE_PASSWORD`: PFXパスワード
-
-## ライセンス
-
-このプロジェクトは MIT ライセンスで提供されます。詳細は `LICENSE` を参照してください。
-
-サードパーティのライセンスは `THIRD-PARTY-NOTICES.md` を参照してください。
-
-プライバシーポリシーは `PRIVACY.md` を参照してください。
-
-## ダウンロード
-
-- 上部のダウンロードボタン、または [Releases](https://github.com/coder-yuuki/VoiceTagEditor/releases/latest) から最新版を入手できます。
-- 配布対象 OS: macOS（Apple Silicon） / Windows（Linux はソースからビルド）
-- macOS での初回起動確認（公証・署名の検証）:
-  - 署名・公証なしビルドの場合、初回はGatekeeperでブロックされることがあります。
-  - 開く手順（2通り）
-    - Finderで右クリック → 開く → ダイアログで「開く」
-    - もしくは隔離属性を外す: `xattr -dr com.apple.quarantine /Applications/voicetageditor.app`
-
-## プロジェクト構造
-
-- `/src/` - フロントエンドコード（Preact + TypeScript）
-  - `main.tsx` - アプリケーションエントリーポイント
-  - `App.tsx` - メインアプリケーションコンポーネント
-- `/src-tauri/` - バックエンドコード（Rust/Tauri）
-  - `src/lib.rs` - Tauri アプリケーションロジックとコマンド
-  - `src/main.rs` - デスクトップアプリケーションエントリーポイント
-
-## 推奨IDE設定
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+</details>

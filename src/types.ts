@@ -6,6 +6,7 @@ export interface Track {
   artists: string[];
   currentArtistInput: string;
   filePath?: string;
+  duration?: string;
 }
 
 export interface AudioMetadata {
